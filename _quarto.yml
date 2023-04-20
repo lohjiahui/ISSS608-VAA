@@ -5,10 +5,14 @@ website:
   title: "ISSS608 Visual Analytics and Applications"
   navbar:
     left:
-      - text: "Hands-on Exercise"
+      - text: "Hands-on Exercises"
         menu: 
           - text: "Hands-on Exercise 1"
-            href: "Hands-on_Ex/Hands-on_Ex01/Hands-on_Ex1.html"
+            href: "Hands-on_Ex/Hands-on_Ex01/Hands-on_Ex01.html"
+      - text: "In-Class Exercises"
+        menu:
+        - text: "In-Class Exercise 1"
+          href: "In-Class_Ex/In-Class_Ex01/In-class_Ex01.html"
     right: 
       - href: index.qmd
         text: Home
