@@ -269,7 +269,7 @@ girafe(
 )  
 ```
 
-Note that the default value of the hover css is hover_css = "fill:orange;".
+Note that the default value of the hover css is hover_css = "fill=orange".
 
 ### 3.4.6 Styling hover effect
 
@@ -502,7 +502,7 @@ The data_id aesthetic is critical to link observations between plots and the too
 
 Plotly's R graphing library create interactive web graphics from ggplot2 graphs and/or a custom interface to the (MIT-licensed) JavaScript library plotly.js inspired by the grammar of graphics. Different from other plotly platform, plot.R is free and open source.
 
-![](Plotly.jpeg)
+![](/images/Plotly.jpeg)
 
 There are two ways to create interactive graph by using plotly, they are:
 
