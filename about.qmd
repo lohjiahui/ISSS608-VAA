@@ -1,9 +1,5 @@
 ---
-title: "About"
+title: Coding and the author
 ---
 
-About this site
-
-```{r}
-1 + 1
-```
+![](images/meme.png)
