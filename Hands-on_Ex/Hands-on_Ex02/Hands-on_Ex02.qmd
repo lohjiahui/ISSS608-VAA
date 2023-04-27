@@ -254,7 +254,12 @@ Figure below is created by combining patchwork and theme_economist() of ggthemes
 
 ```{r}
 patchwork <- (p1 / p2) | p3
-patchwork & theme_economist()
+patchwork & theme_economist() +
+  theme(plot.title = element_text(size = 8),
+          axis.title.y = element_text(size = 6),
+          axis.title.x = element_text(size = 6),
+          axis.text.y = element_text(size = 6),
+          axis.text.x = element_text(size = 6))
 ```
 
 ## 2.6 Reference
