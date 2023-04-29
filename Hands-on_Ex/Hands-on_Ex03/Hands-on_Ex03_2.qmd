@@ -148,6 +148,8 @@ In Plotly R package, both ggplotly() and plot_ly() support key frame animations 
 In this sub-section, you will learn how to create an animated bubble plot by using `ggplotly()` method.
 
 ```{r}
+#| warning: FALSE
+#| 
 gg <- ggplot(globalPop, 
        aes(x = Old, 
            y = Young, 
@@ -175,7 +177,9 @@ ggplotly(gg)
 
 In this sub-section, you will learn how to create an animated bubble plot by using `plot_ly()` method.
 
-```{r, warning=FALSE}
+```{r}
+#| warning: FALSE
+
 bp <- globalPop %>%
   plot_ly(x = ~Old, 
           y = ~Young, 
