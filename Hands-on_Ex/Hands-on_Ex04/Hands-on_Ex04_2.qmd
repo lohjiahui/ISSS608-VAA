@@ -1,0 +1,210 @@
+---
+title: "Hands-on_Ex04.2"
+author: "Loh Jiahui"
+date: "4 May 2023"
+---
+
+10 Visualising Uncertainty
+
+10.1 Learning Outcomes
+
+-   Visualising the uncertainty of point estimates
+
+::: callout-note
+-   A point estimate is a single number, such as a mean.
+-   Uncertainty is expressed as standard error, confidence interval, or credible interval
+-   Important:
+    -   Don't confuse the uncertainty of a point estimate with the variation in the sample
+:::
+
+```{r}
+#| warning: false
+pacman::p_load(tidyverse, plotly, crosstalk, DT, ggdist, gganimate)
+exam <- read_csv("data/Exam_data.csv")
+```
+
+10.2.1 Visualizing the uncertainty of point estimates: ggplot2 methods The code chunk below performs the followings:
+
+-   group the observation by RACE,
+-   computes the count of observations, mean, standard deviation and standard error of Maths by RACE, and
+-   save the output as a tibble data table called my_sum.
+
+```{r}
+my_sum <- exam %>%
+  group_by(RACE) %>%
+  summarise(
+    n=n(),
+    mean=mean(MATHS),
+    sd=sd(MATHS)
+    ) %>%
+  mutate(se=sd/sqrt(n-1))
+```
+
+Next, the code chunk below will
+
+```{r}
+knitr::kable(head(my_sum), format = 'html')
+```
+
+10.2.2 Visualizing the uncertainty of point estimates: ggplot2 methods
+
+The code chunk below is used to reveal the standard error of mean maths score by race.
+
+```{r}
+ggplot(my_sum) +
+  geom_errorbar(
+    aes(x=RACE, 
+        ymin=mean-se, 
+        ymax=mean+se), 
+    width=0.2, 
+    colour="black", 
+    alpha=0.9, 
+    size=0.5) +
+  geom_point(aes
+           (x=RACE, 
+            y=mean), 
+           stat="identity", 
+           color="red",
+           size = 1.5,
+           alpha=1) +
+  ggtitle("Standard error of mean 
+          maths score by race")
+```
+
+10.2.3 Visualizing the uncertainty of point estimates: ggplot2 methods
+
+```{r}
+ggplot(my_sum) +
+  geom_errorbar(
+    aes(x= reorder(RACE,mean), 
+        ymin=mean - 1.96*se, 
+        ymax=mean + 1.96*se), 
+    width=0.2, 
+    colour="black", 
+    alpha=0.9, 
+    size=0.5) +
+  geom_point(aes
+           (x=RACE, 
+            y=mean), 
+           stat="identity", 
+           color="red",
+           size = 1.5,
+           alpha=1) +
+  ggtitle("95% confidence interval of mean maths score by race")
+```
+
+10.2.4 Visualizing the uncertainty of point estimates with interactive error bars
+
+```{r}
+d <- highlight_key(my_sum) 
+p <- ggplot(my_sum) +
+  geom_errorbar(
+    aes(x= reorder(RACE,mean), 
+        ymin=mean - 2.58*se, 
+        ymax=mean + 2.58*se), 
+    width=0.2, 
+    colour="black", 
+    alpha=0.9, 
+    size=0.5) +
+  geom_point(aes
+           (x=RACE, 
+            y=mean), 
+           stat="identity", 
+           color="red",
+           size = 1.5,
+           alpha=1) +
+  ggtitle("99% confidence interval of mean maths score by race")
+
+gg <- highlight(ggplotly(p),        
+                "plotly_selected")  
+
+crosstalk::bscols(gg,               
+                  DT::datatable(d), 
+                  widths = 5) 
+```
+
+## 10.3 Visualising Uncertainty: **ggdist** package
+
+-   [**ggdist**](https://mjskay.github.io/ggdist/) is an R package that provides a flexible set of ggplot2 geoms and stats designed especially for visualising distributions and uncertainty.
+
+-   It is designed for both frequentist and Bayesian uncertainty visualization, taking the view that uncertainty visualization can be unified through the perspective of distribution visualization:
+
+    -   for frequentist models, one visualises confidence distributions or bootstrap distributions (see vignette("freq-uncertainty-vis"));
+
+    -   for Bayesian models, one visualises probability distributions (see the tidybayes package, which builds on top of ggdist).
+
+![](/images/ggdist.png)
+
+### 10.3.1 Visualizing the uncertainty of point estimates: **ggdist**methods
+
+In the code chunk below, [`stat_pointinterval()`](https://mjskay.github.io/ggdist/reference/stat_pointinterval.html) of **ggdist** is used to build a visual for displaying distribution of maths scores by race.
+
+```{r}
+exam %>%
+  ggplot(aes(x = RACE, 
+             y = MATHS)) +
+  stat_pointinterval() +   #<<
+  labs(
+    title = "Visualising confidence intervals of mean math score",
+    subtitle = "Mean Point + Multiple-interval plot")
+```
+
+Gentle advice: This function comes with many arguments, it is advised to read the syntax reference for more detail.
+
+```{r}
+exam %>%
+  ggplot(aes(x = RACE, y = MATHS)) +
+  stat_pointinterval(.width = 0.95,
+  .point = median,
+  .interval = qi) +
+  labs(
+    title = "Visualising confidence intervals of mean math score",
+    subtitle = "Mean Point + Multiple-interval plot")
+```
+
+10.3.3 Visualizing the uncertainty of point estimates: **ggdist**methods
+
+In the code chunk below, [`stat_gradientinterval()`](https://mjskay.github.io/ggdist/reference/stat_gradientinterval.html) of **ggdist** is used to build a visual for displaying distribution of maths scores by race.
+
+```{r}
+exam %>%
+  ggplot(aes(x = RACE, 
+             y = MATHS)) +
+  stat_gradientinterval(   
+    fill = "skyblue",      
+    show.legend = TRUE     
+  ) +                        
+  labs(
+    title = "Visualising confidence intervals of mean math score",
+    subtitle = "Gradient + interval plot")
+```
+
+10.4 Visualising Uncertainty with Hypothetical Outcome Plots (HOPs)
+
+Step 1: Installing ungeviz package
+
+```{r}
+devtools::install_github("wilkelab/ungeviz")
+```
+
+Step 2: Launch the application in R
+
+```{r}
+library(ungeviz)
+```
+
+10.5 Visualising Uncertainty with Hypothetical Outcome Plots (HOPs)
+```{r}
+#| warning: false
+ggplot(data = exam, 
+       (aes(x = factor(RACE), y = MATHS))) +
+  geom_point(position = position_jitter(
+    height = 0.3, width = 0.05), 
+    linewidth = 0.4, color = "#0072B2", alpha = 1/2) +
+  geom_hpline(data = sampler(25, group = RACE), height = 0.6, color = "#D55E00") +
+  theme_bw() + 
+  # `.draw` is a generated column indicating the sample draw
+  transition_states(.draw, 1, 3)
+```
+
+
