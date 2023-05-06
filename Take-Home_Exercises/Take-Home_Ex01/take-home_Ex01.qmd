@@ -1,0 +1,150 @@
+---
+title: "take-home_Ex01"
+author: "Loh Jiahui"
+date: "5 May 2023"
+---
+
+# Take-home Exercise 1 City of Engagement
+
+## 1 Setting the Scene
+
+City of Engagement, with a total population of 50,000, is a small city located at Country of Nowhere. The city serves as a service centre of an agriculture region surrounding the city. The main agriculture of the region is fruit farms and vineyards. The local council of the city is in the process of preparing the Local Plan 2023. A sample survey of 1000 representative residents had been conducted to collect data related to their household demographic and spending patterns, among other things. The city aims to use the data to assist with their major community revitalization efforts, including how to allocate a very large city renewal grant they have recently received.
+
+## 2 The Task
+
+In this take-home exercise, you are required to apply the concepts and methods you had learned in Lesson 1-4 to reveal the demographic and financial characteristics of the city of Engagement, using appropriate static and interactive statistical graphics methods.
+
+## 3 The Data
+
+For the purpose of this study, two data sets are provided. They are:
+
+-   Participants.csv: Contains information about the residents of City of Engagement that have agreed to participate in this study.
+-   FinancialJournal.csv: Contains information about financial transactions.
+
+## 4 Getting Started: Launching R Packages and Importing Data
+
+First, the necessary packages and datasets are loaded.
+
+```{r}
+pacman::p_load(tidyverse, ggrepel, patchwork, 
+               ggthemes,hrbrthemes,ggiraph, plotly, 
+               patchwork, DT, readxl, gifski, gapminder,
+               gganimate, crosstalk, ggstatsplot, dplyr, lubridate)
+```
+
+```{r}
+participants <- read_csv("data/Participants.csv", show_col_types = FALSE)
+finance <- read_csv("data/FinancialJournal.csv", show_col_types = FALSE)
+```
+
+## 5 Data Preparation
+
+Before jumping into visualising the data. We first take a deep dive to understand the data structure and clean the data, where necessary, in preparation for visualisation.
+
+### 5.1 Data on Participants Information
+
+As newer versions of readr don't report the full column specification when data files are loaded. We will use the spec() function to better understand the full column specification:
+
+```{r}
+spec(participants)
+```
+
+Results from running the spec() function highlighted that multiple columns are not set to the most appropriate data type. For example, participantID should be viewed as a categorical variable, as opposed to a continuous numeric variable. We will use the mutate function to update the data types.
+
+```{r}
+participants <- participants %>% mutate_at(c('participantId', 'interestGroup', 'educationLevel'), as.factor)
+
+#set education level ordinal
+```
+
+We also check the dataset for duplicated participants. Note that we have 1,011 participants in our dataset, instead of 1,000. No duplicates were found.
+
+```{r}
+participants <- participants %>% distinct(participantId, .keep_all= TRUE)
+```
+
+Lastly, as we want to have the flexibility to analyse the age variable as a band, on top of it being a continous variable, we will also recode the age variable into 10 year bands.
+
+```{r}
+# Recode ages into 10-year age bands
+# Define breaks and labels
+breaks <- seq(10, 70, by = 10)
+length(breaks)
+labels <- c("10-19", "20-29", "30-39", "40-49", "50-59", "60+")
+
+# Recode age variable
+participants$age_band <- cut(participants$age, breaks = breaks, labels = labels)
+
+```
+
+### 5.2 Data on Financial Journal
+
+Similar to the Participants dataset, data cleaning is performed on the finance data to check for appropriate data types and duplicates.
+
+```{r}
+spec(finance)
+finance <-finance %>% mutate_at(c('participantId', 'category'), as.factor)
+```
+
+Unlike the participants data, 1,113 duplicated rows were found in the Finance dataset. These rows will be removed from subsequent analyses. We will save the truncated dataset under fin_new
+
+```{r}
+fin_new <- finance %>% distinct()
+```
+
+In order to look at spending patterns, it maybe useful to look at these trends on a yearly or monthly basis. As such, new variables were created to extract year and month data from the timestamp.
+
+```{r}
+fin_new$timestamp <- as.Date(fin_new$timestamp, format = "%Y-%m-%d")
+
+#Extracting month data
+fin_new$Month <- month(as.Date(fin_new$timestamp))
+
+#need to set year month because got 2 years
+```
+
+Under the amount variable in FinancialJournal, inflow and outflow of money transacted is recorded by positive and negative numbers, respectively. This may cause confusion when visualising the data. As such, we will process the data and use the absolute values.
+
+```{r}
+#| code-fold: true
+fin_new$amount <- abs(fin_new$amount)
+fin_new
+```
+
+To ensure completeness of data, we also look at the data at the participant level. From the histogram below, it is clear that there is a cluster of 131 participants who had very few transactions. This may be due to participants dropping out from the study. Since little to no financial data is collected from these participants, these participants will be removed from subsequent analyses.
+
+```{r}
+fin_grouped <- fin_new %>%
+  group_by(participantId) %>%
+  dplyr::summarize(transaction_count = n()) %>%
+  arrange(transaction_count)
+
+p <- ggplot(data=fin_grouped, 
+       aes(x = transaction_count)) +
+  geom_histogram(bins = 39,
+                color="black",      
+                fill="light blue") +
+  ggtitle("Distribution of Transactions among Participants") +
+  xlab("Transaction Count") + 
+  ylab("Number of Participants")
+
+p <- ggplotly(p, tooltip=c("y"))
+
+# display the plot
+p
+```
+
+```{r}
+# Find participant IDs in fin_grouped with transaction count < 500
+participants_to_remove <- fin_grouped %>%
+  filter(transaction_count < 500) %>%
+  pull(participantId)
+
+# Filter out rows in fin_new for those participants
+fin_new <- fin_new %>%
+  filter(!participantId %in% participants_to_remove)
+```
+
+#need to merge data without 131 respondents
+
+## 6 Data Exploration

@@ -1,0 +1,92 @@
+---
+title: "Take-Home Exercise 1"
+author: "Loh Jiahui"
+date: "5 May 2023"
+---
+
+# Take-home Exercise 1 City of Engagement
+
+## 1 Setting the Scene
+
+City of Engagement, with a total population of 50,000, is a small city located at Country of Nowhere. The city serves as a service centre of an agriculture region surrounding the city. The main agriculture of the region is fruit farms and vineyards. The local council of the city is in the process of preparing the Local Plan 2023. A sample survey of 1000 representative residents had been conducted to collect data related to their household demographic and spending patterns, among other things. The city aims to use the data to assist with their major community revitalization efforts, including how to allocate a very large city renewal grant they have recently received.
+
+## 2 The Task
+
+In this take-home exercise, you are required to apply the concepts and methods you had learned in Lesson 1-4 to reveal the demographic and financial characteristics of the city of Engagement, using appropriate static and interactive statistical graphics methods.
+
+## 3 The Data
+
+For the purpose of this study, two data sets are provided. They are:
+
+-   Participants.csv: Contains information about the residents of City of Engagement that have agreed to participate in this study.
+-   FinancialJournal.csv: Contains information about financial transactions.
+
+## 4 Getting Started: Launching R Packages and Importing Data
+
+First, the necessary packages and datasets are loaded.
+
+```{r}
+pacman::p_load(tidyverse, ggrepel, patchwork, 
+               ggthemes,hrbrthemes,ggiraph, plotly, 
+               patchwork, DT, readxl, gifski, gapminder,
+               gganimate, crosstalk, ggstatsplot, dplyr, lubridate)
+```
+
+```{r}
+participants <- read_csv("data/Participants.csv", show_col_types = FALSE)
+finance <- read_csv("data/FinancialJournal.csv", show_col_types = FALSE)
+```
+
+## 5 Data Preparation
+
+Before jumping into visualising the data. We first take a deep dive to understand the data structure and clean the data, where necessary, in preparation for visualisation.
+
+### 5.1 Data on Participants Information
+
+As newer versions of readr don't report the full column specification when data files are loaded. We will use the spec() function to better understand the full column specification:
+
+```{r}
+spec(participants)
+```
+
+Results from running the spec() function highlighted that multiple columns are not set to the most appropriate data type. For example, participantID should be viewed as a categorical variable, as opposed to a continuous numeric variable. We will use the mutate function to update the data types.
+
+```{r}
+participants <- participants %>% mutate_at(c('participantId', 'interestGroup', 'educationLevel'), as.factor)
+```
+
+We also check the dataset for duplicated participants. Note that we have 1,011 participants in our dataset, instead of 1,000. No duplicates were found.
+
+```{r}
+participants %>% distinct(participantId, .keep_all= TRUE)
+```
+
+### 5.2 Data on Financial Journal
+
+Similar to the Participants dataset, data cleaning is performed on the finance data to check for appropriate data types and duplicates. 
+
+```{r}
+spec(finance)
+finance <-finance %>% mutate_at(c('participantId', 'category'), as.factor)
+```
+
+Unlike the participants data, 1,113 duplicated rows were found in the Finance dataset. These rows will be removed from subsequent analyses. 
+
+```{r}
+finance_new <- finance %>% distinct()
+finance_new
+finance
+```
+
+In order to look at spending patterns, it maybe useful to look at these trends on a yearly or monhtly basis. As such, new variables were created to extract year and month data from the timestamp. 
+
+```{r}
+finance$timestamp <- as.Date(finance$timestamp, format = "%Y-%m-%d")
+
+finance$Month <- format(as.Date(finance$timestamp), "%m")
+finance$Year <- format(as.Date(finance$timestamp), "%Y")
+finance$Month_Yr <- format(as.Date(finance$timestamp), "%Y-%m")
+
+finance
+```
+

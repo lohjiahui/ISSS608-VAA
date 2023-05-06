@@ -46,13 +46,13 @@ as_tibble(exam_data)
 In the code chunk below, [*gghistostats()*](https://indrajeetpatil.github.io/ggstatsplot/reference/gghistostats.html) is used to to build an visual of one-sample test on English scores.
 
 ```{r}
-set.seed(1234)
+set.seed(1234) #always need to set seed when using bayes stats
 
 gghistostats(
   data = exam_data,
   x = ENGLISH,
   type = "bayes",
-  test.value = 60,
+  test.value = 60, #test the null hypothesis that mean = 60
   xlab = "English scores"
 )
 ```
@@ -241,10 +241,12 @@ plot(check_h)
 We can also perform the complete by using [*check_model()*](https://easystats.github.io/performance/reference/check_model.html).
 
 ```{r}
+#| fig-width: 10
+#| fig-height: 15
 check_model(model1)
 ```
 
-### 9.6.5 Visualising Regression Parameters: see methods 
+### 9.6.5 Visualising Regression Parameters: see methods
 
 In the code below, plot() of see package and parameters() of parameters package is used to visualise the parameters of a regression model.
 
