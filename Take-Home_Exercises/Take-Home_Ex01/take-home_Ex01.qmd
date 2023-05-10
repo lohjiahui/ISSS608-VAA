@@ -81,7 +81,7 @@ participants$age_band <- cut(participants$age, breaks = breaks, labels = labels)
 
 ```
 
-### 5.2 Data on Financial Journal
+### 5.2 *FinancialJournal* dataset
 
 Similar to the *Participants* dataset, multiple issues were observed in the *FinancialJournal* dataset as well. They were:
 
