@@ -1,7 +1,8 @@
 ---
 title: "Take Home Exercise 1"
 author: "Loh Jiahui"
-date: "5 May 2023"
+date: "10 May 2023"
+date-modified: "`r Sys.Date()`"
 execute: 
   warning: false
 ---
@@ -23,7 +24,7 @@ The goal is to build effective solutions to help city managers and planners to e
 For the purpose of this study, two data sets will be analysed. They are:
 
 -   **Participants.csv**: Contains information about the residents of City of Engagement that have agreed to participate in this study.
--   **FinancialJournal.csv**: Contains information about financial transactions.
+-   **FinancialJournal.csv**: Contains information about financial transactions of residents in the city.
 
 ## 4 Getting Started: Launching R Packages and Importing Data
 
@@ -33,10 +34,10 @@ First, the necessary packages are installed and loaded onto RStudio.
 pacman::p_load(ggplot2, tidyverse, ggrepel, patchwork, 
                ggthemes,hrbrthemes,ggiraph, plotly, 
                patchwork, DT, readxl, gifski, gapminder,
-               gganimate, crosstalk, ggstatsplot, dplyr, lubridate, ggnewscale, broom, knitr, ggridges, viridis, ggdist)
+               gganimate, crosstalk, ggstatsplot, dplyr, lubridate, ggnewscale, broom, knitr, ggridges, viridis, ggdist, ggridges, colorspace)
 ```
 
-The *Participants.csv* and *FinancialJournal.csv* data is then importanted from csv using `readr::read_csv()` and saved under *"Participants"* and *"Finance"*, respectively.
+The *Participants.csv* and *FinancialJournal.csv* data is then imported from csv using `readr::read_csv()` and saved under *"Participants"* and *"Finance"*, respectively.
 
 ```{r}
 participants <- read_csv("data/Participants.csv", show_col_types = FALSE)
@@ -67,7 +68,7 @@ participants <- participants %>% mutate_at(c('participantId', 'interestGroup', '
 participants$educationLevel <- ordered(participants$educationLevel, levels = c("Low", "HighSchoolOrCollege", "Bachelors", "Graduate"))
 ```
 
--   In order to have the flexibility to analyse the age variable as a band, we will also re-code the age variable into 10 year bands. The new variable is saved under *age_band*.
+-   In order to have the flexibility to analyse the age variable in bands, we will also re-code the age variable into 10 year bands using the `cut()` function. The new variable is saved under *age_band*.
 
 ```{r}
 #| code-fold: true
@@ -107,21 +108,21 @@ finance$MonthYear <- format(as.Date(finance$timestamp), "%Y-%m")
 
 ```
 
--   1,113 duplicated rows were also observed in the *Finance* dataset. Using `distinct()` these rows should be removed from subsequent analyses. The truncated dataset was saved under *fin_new.*
+-   1,113 duplicated rows were also observed in the *Finance* dataset. Using `distinct()` these rows should be removed from subsequent analyses. The truncated dataset will be saved under *fin_new.*
 
 ```{r}
 #| code-fold: true
 fin_new <- finance %>% distinct()
 ```
 
--   Under the amount variable in *FinancialJournal*, inflow and outflow of money transacted is recorded by positive and negative numbers, respectively. This may cause confusion when visualising the data. We will process the data and use the absolute values using `abs()`.
+-   Under the amount variable in *FinancialJournal*, inflow and outflow of money transacted is recorded using positive and negative numbers, respectively. This may cause confusion when visualising the data. We will process the data and use the absolute values using `abs()`.
 
 ```{r}
 #| code-fold: true
 fin_new$amount <- abs(fin_new$amount)
 ```
 
--   To ensure completeness of data, we also look at the data at the participant level. From the histogram below, it is clear that a cluster of 131 participants had very few, close to zero transactions. This may be due to participants dropping out from the study, or moving away from the town. Since little to no financial data were collected from these participants, these participants will be removed from subsequent analyses.
+-   To ensure completeness of data, we also look at the data at the participant level. From the histogram below, it is clear that a cluster of 131 participants had very few, close to zero transactions. This may be due to participants dropping out from the study, or moving away from the town. Since little to no financial data were collected from these participants, these participants will be removed from subsequent analyses using `filter()`.
 
 ::: panel-tabset
 ### Plot
@@ -210,7 +211,7 @@ fin_wide[is.na(fin_wide)] <- 0
 -   Before merging, we will create the following new variables using `mutate()`:
     -   Total Expenditure across categories, across months e.g., TotExp_Mar
     -   Total Earnings, across months e.g., TotEarn_Mar
-    -   Total Savings, across months e.g., TotSav_Mar
+    -   Total Savings, across months calculated using TotEarn - TotExp for each month
 
 ```{r}
 #| code-fold: true
@@ -488,7 +489,7 @@ p2 <- ggplot(education_props, aes(x = "", y = prop, fill = educationLevel)) +
 ```
 :::
 
-As a next step, let's explore whether there is a relationship between age and education. Since the distribution of age departed from normality, we will use a non-parametric test. Looking at the boxplots, it was observed that there was no statistically significant correlations between the two variables.
+As a next step, let's explore whether there is a relationship between age and education. Since the distribution of age departed from normality, we will use the non-parametric Kruskal-Wallis test. Looking at the boxplots, it was observed that there was no statistically significant correlations between the two variables.
 
 ::: callout-note
 This means that the education levels of younger residents were comparable to older residents. Since education levels are commonly tied to income, this finding may suggest low social mobility among residents in the city. As such, we will explore the relationship between education and wage next.
@@ -831,10 +832,10 @@ Earn_Exp_avg$savings <- round(Earn_Exp_avg$savings, 2)
 Earn_Exp_avg <- Earn_Exp_avg %>% rename(Education_Level = educationLevel, Avg_Earning = avg_earning, Avg_Expenditure = avg_expenditure, Avg_Savings = savings)
 ```
 
-From the line charts below, we can see that monthly expenditure among residents tended to be fairly stable across months, regardless of their education levels. Even in the month of March, where earnings tended to spike, expenditure remained fairly low. Notably, those who earned more tended to have sizable monthly savings.
+From the line charts below, we can see that monthly expenditure among residents tended to be fairly stable across months, regardless of their education levels. Even in the month of March, where earnings tended to spike, expenditure remained fairly low. Notably, instead of spending more, residents with higher wage tended to save more monthly (portion highlighted in yellow).
 
 ::: callout-note
-This suggests that residents are generally frugal with their money and spend within their means. A good sign in terms of financial health!
+This suggests that residents, regardless of income, are generally frugal with their money and spend within their means. A good sign in terms of financial health!
 :::
 
 ::: panel-tabset
@@ -914,7 +915,7 @@ p
 
 ### 7.2 Expenditure Pattern
 
-To better undertand spending patterns, new variables were calculated to derive the average monthly spending on each category i.e., education, food, recreational, shelter.
+To better understand spending patterns, using `rowMeans()`, new variables were calculated to derive the average monthly spending on each category i.e., education, food, recreational, shelter.
 
 ```{r}
 #| code-fold: true
@@ -1149,7 +1150,9 @@ labs(x = "Joviality Score", y = "Recreation Expenditure")
 ```
 :::
 
-Breaking down this relationship further by interest groups, we also observe that this positive correlation is true, across all groups. Additional analyses of interest groups by size i.e., number of interested residents, and joviality scores recorded no significant differences.
+Breaking down this relationship further by interest groups, we also observe that this positive correlation is true, across all groups.
+
+Additional analyses of interest groups by size i.e., number of interested residents, and joviality scores recorded no significant differences.
 
 ::: callout-note
 This finding suggests that taking part and being active in interest group cans lead to a more happier, more fulfilling lives. It is therefore important that the local council look into this aspect e.g, understand the preferences of residents, current infrastructure gaps etc, to better allocate resources and encourage greater participation.
@@ -1194,11 +1197,7 @@ ggscatterstats(
 
 ### 8.3 Age and Happiness
 
-Lastly, we look at the relationship between age and joviality. Looking at the scatter plot below, there appeared to be a slight negative correlation between age and joviality.
-
-::: callout-note
-As older residents were once important contributors to the community, the data suggests that more can be done to understand why older residents are noting lower joviality scores. Taking care of the older residents would also put younger residents at ease, knowing that their parents are well taken care off, and they would be too in the future.
-:::
+Lastly, we look at the relationship between age and joviality. Looking at the scatter plot below, there appeared to be a slight negative correlation between age and joviality. 
 
 ::: panel-tabset
 ### Plot
@@ -1228,11 +1227,65 @@ ggscatterstats(
 ```
 :::
 
+Looking closer at the distribution of joviality scores by 10 year age bands, we also see a larger hump on among residents in their 50s, indicating a score of 0.4 and below. This slope then tapers downards as joviality scores increase. 
+
+::: callout-note
+As older residents were once important contributors to the community, the data suggests that more can be done to understand why older residents are noting lower joviality scores. Taking care of the older residents would also put younger residents at ease, knowing that their parents are well taken care off, and they would be too in the future.
+:::
+
+::: panel-tabset
+### Distribution
+
+```{r}
+#| echo: false
+
+ggplot(final_data, 
+       aes(x = joviality, 
+           y = age_band,
+           fill = stat(x))) +
+  geom_density_ridges_gradient(
+    scale = 3,
+    rel_min_height = 0.01) +
+  scale_fill_viridis_c(name = "Temp. [F]",
+                       option = "C") +
+  scale_x_continuous(
+    name = "Joviality Scores",
+    expand = c(0, 0)
+  ) +
+  scale_y_discrete(name = NULL, expand = expansion(add = c(0.2, 2.6))) +
+  ggtitle("Joviality Scores by Age Bands") +
+  theme_ridges()
+```
+
+### Code
+
+```{r}
+#| echo: false
+
+ggplot(final_data, 
+       aes(x = joviality, 
+           y = age_band,
+           fill = stat(x))) +
+  geom_density_ridges_gradient(
+    scale = 3,
+    rel_min_height = 0.01) +
+  scale_fill_viridis_c(name = "Temp. [F]",
+                       option = "C") +
+  scale_x_continuous(
+    name = "Joviality Scores",
+    expand = c(0, 0)
+  ) +
+  scale_y_discrete(name = NULL, expand = expansion(add = c(0.2, 2.6))) +
+  theme_ridges()
+```
+
+:::
+
 ## 9 Conclusion
 
 -   There is generally a good spread of residents across all ages in the City of Engagement. Families however, tended to be relatively small; no more than 3, with about 1 in 3 household indicating that they have children at home.
 
--   Education was also largely divided down the middle, with about half of residents holding a bachelors degree and above. Notably, younger respondents were not more lilely to be more educated than older residents in the city. As higher education was found to be highly correlated with income, there may be value for the city council to look into nudging younger residents to further their education, to improve their quality of live in the longer term.
+-   Education was also largely divided down the middle, with about half of residents holding a bachelors degree and above. Notably, younger respondents were not more likely to be more educated than older residents in the city. As higher education was found to be highly correlated with income, there may be value for the city council to look into nudging younger residents to further their education, to improve their quality of live in the longer term.
 
 -   When comparing earnings to expenditure, it is noted that the large majority, even those who earned less, tended to spend within their means, indicating good financial health among residents.
 
