@@ -1,0 +1,739 @@
+---
+title: "Take Home Exercise 2"
+author: "Loh Jiahui"
+date: "18 May 2023"
+date-modified: "`r Sys.Date()`"
+execute: 
+  warning: false
+format:
+  html: 
+    code-fold: true
+    code-summary: "Show the Code"
+editor: visual
+---
+
+## 1 Challenge Overview ([VAST Challenge 2023](https://vast-challenge.github.io/2023/))
+
+Seafood is one of the most widely traded commodities in the global food market. More than a third of the world's population relies on fish and other seafood as a primary source of protein in their diet, and an estimated 520 million people make their livelihoods through fishing or fishing-related activities.
+
+Unfortunately, illegal, unreported, and unregulated fishing is a major contributor to over fishing worldwide. These activities pose a threat not only to fragile marine ecosystems, but also to food security in coastal communities and regional stability more broadly. The illegal fishing trade has been linked to organized crime, and human rights violations are common when fishing operations are conducted without regulatory oversight.
+
+The country of Oceanus has sought FishEye International's help in identifying companies possibly engaged in illegal, unreported, and unregulated (IUU) fishing. Using visual analytics, this challenge will sought to help FishEye identify companies that may be engaged in illegal fishing.
+
+### 1.1 Data
+
+The data used for this exercises will be from Mini Challenge 2 of the VAST Challenge. This includes 2 main files; the first dataset in json format consists of 34,552 nodes and 5,464,092 directed edges, while the second set of files, a bundle of 12, each represent the output of an AI program for link reference Each bundle represents a list of potential edges to add to the main graph. Details of the attributes provided are listed below:
+
+**Node:**
+
+-   **id:** Name of the company that originated (or received) the shipment
+-   **shpcountry:** Country the company most often associated with when shipping
+-   **rcvcountry:** Country the company most often associated with when receiving
+-   **dataset:** Always 'MC2'
+
+**Edge:**
+
+-   **arrivaldate:** Date the shipment arrived at port in YYYY-MM-DD format.
+-   **hscode:** Harmonized System code for the shipment. Can be joined with the hscodes table to get additional details.
+-   **valueofgoods_omu:** Customs-declared value of the total shipment, in Oceanus Monetary Units (OMU)
+-   **volumeteu:** The volume of the shipment in 'Twenty-foot equivalent units', roughly how many 20-foot standard containers would be required. (Actual number of containers may have been different as there are 20ft and 40ft standard containers and tankers that do not use containers)
+-   **weightkg:** The weight of the shipment in kilograms (if known)
+-   **dataset:** Always 'MC2'
+-   **type:** Always 'shipment' for MC2
+-   **generated_by:** Name of the program that generated the edge. (Only found on 'bundle' records.)
+
+### 1.2 Objectives
+
+The main objective of this exercise is to use visual analytics to identify temporal patterns for individual entities and between entities in the knowledge graph FishEye created from trade records, and categorize the types of business relationship patterns.
+
+Specifically, this piece will take a different lens and zoom into outlier companies with exceptionally high shipment weights, to try to uncover business patterns.
+
+## 2 Load and Import Data
+
+### 2.1 Load R Packages
+
+First, the necessary packages are installed and loaded onto the RStudio environment.
+
+```{r}
+pacman::p_load(jsonlite, tidygraph, ggraph, visNetwork, tidyverse, igraph, ggraph, lubridate, clock, graphlayouts, ggridges, viridis, ggdist, colorspace, ggdist, ggridges, ggthemes, colorspace, scales, cowplot, visNetwork, plotly, stringr, igraph, patchwork, viridis)
+```
+
+### 2.2 Importing the data
+
+Unlike earlier exercises where the data files were in csv format, the data files provided in the challenge are in json format. As such, the dataset will he imported using `jsonlite::fromJSON` and saved as **'MC2'**.
+
+```{r}
+MC2 <- jsonlite::fromJSON("/Users/jiahuiloh/lohjiahui/ISSS608-VAA/Take-Home_Exercises/Take-Home_Ex02/data/mc2_challenge_graph.json")
+```
+
+Next we will convert the file into tibble format using `as_tibble`. The *'**nodes'** list will be saved as'***MC2_nodes'***, and* '**links'** list as *'**MC2_edges'***. The variables in the lists will also be re-ordered to facilitate subsequent visualization tasks. The details are as follows:
+
+**MC2_nodes:** id, shpcountry, rcvcountry
+
+**MC2_edges:** source, target,arrivaldate, hscode, weightkg, valueofgoods_omu, valueofgoodsusd, volumeteu
+
+For both, 'dataset' column is dropped since it does not provide any additional information or insights.
+
+```{r}
+MC2_nodes <- as_tibble(MC2$nodes) %>%
+  select(id,shpcountry,rcvcountry) 
+
+MC2_edges <- as_tibble(MC2$links) %>%
+  select(source, target, arrivaldate, hscode, weightkg, valueofgoods_omu, valueofgoodsusd, volumeteu)
+```
+
+## 3 Data Review and Wrangling
+
+After a quick exploration of the data, Looking a few problems were observed:
+
+-   arrivaldate in `<chr>` format, should be transformed to `<date>` format
+-   large proportions of missing data, recorded as 'NA' or '0' under valueofgoods_omu, valueofgoodsusd and volumeteu.
+-   multiple duplicated rows in the edges list
+-   irrelevant hscodes i.e., not associated with the fishing industry
+
+The following subsections will document the cleaning process.
+
+### 3.1 Correcting for 'date' format
+
+Using the `glimpse()` function from the dplyr library, we review the columns in the new dataframes.
+
+```{r}
+glimpse(MC2_nodes)
+glimpse(MC2_edges)
+```
+
+::: callout-warning
+The output report of 'MC2_edges' above reveals that the 'arrivaldate' is treated as 'Character' data type instead of date data type. This is an error! Before we continue, it is important for us to change the data type of 'arrivaldate' field back to 'Date' data type.
+:::
+
+To correct the data type for 'arrivaldate' we will use the ymd() function of lubridate package. Additionally, we will create 3 new columns to extract the year month, year and month data from 'arrivaldate'. Doing so will allow us to look at broader and seasonal patterns, if any, in subsequent analyses.
+
+```{r}
+MC2_edges <- MC2_edges %>%
+  mutate(arrivaldate = as.Date(arrivaldate),
+         yearmonth = format(arrivaldate, "%Y-%m"),
+         year = year(arrivaldate),
+         month = factor(month.abb[month(arrivaldate)], levels = month.abb, ordered = TRUE))
+```
+
+### 3.2 Completeness of data provided
+
+To assess which variables may be most useful for analysis, we use the `summarise_all()` function to review each variable to understand how complete the data provided is.
+
+**MC2_node:**
+
+-   There are 0 missing values in the ID column.
+-   More than half of the rows in 'shpcountry' were recorded as NA, suggesting that we should we decide to use this data column, it should be used with caution.
+
+```{r}
+MC2_nodes %>%
+  summarise_all(~ sum(is.na(.)) / n())
+```
+
+**MC2_edges:**
+
+-   Looking at the two variables indicating value of goods in both omu and usd, a high proportion of NA was recorded.
+-   Approximately 84% of records in the 'volumeteu' column was noted as 0, and may not be very useful for analyses.
+-   No missing value, however, was noted for the weightkg column. It may therefore be more efficient to use this column for analyses.
+
+```{r}
+MC2_edges %>%
+  summarise_all(~ sum(is.na(.)) / n())
+
+MC2_edges %>%
+  summarise(zero_proportion = mean(volumeteu == 0, na.rm = TRUE))
+```
+
+::: callout-note
+With this summary in mind, as mentioned in the objectives, analyses would focus on using the weight of shipments to understand trade relationships between companies.
+:::
+
+### 3.3 Checking for duplicates
+
+As both datasets are relatively large. We will also check for duplicates in both dataframes using the distinct() function from dplyr.
+
+**MC2_nodes:** no duplicated rows were found.
+
+**MC2_edges:** 155,291 duplicated rows were identified
+
+```{r}
+#Nodes
+# Remove duplicated rows and keep only unique rows
+MC2_nodes_unique <- distinct(MC2_nodes)
+
+# Calculate number of removed duplicated rows
+num_removed_rows <- nrow(MC2_nodes) - nrow(MC2_nodes_unique)
+
+# Print the number of duplicated rows
+cat("Number of duplicated rows in MC2_nodes:", num_removed_rows, "\n")
+
+#Edges
+# Remove duplicated rows and keep only unique rows
+MC2_edges_unique <- distinct(MC2_edges)
+
+# Calculate number of removed duplicated rows
+num_removed_rows <- nrow(MC2_edges) - nrow(MC2_edges_unique)
+
+# Print the number of duplicated rows
+cat("Number of duplicated rows in MC2_edges:", num_removed_rows)
+```
+
+While it is possible to have multiple identical shipments between companies, it does seem odd that everything is identical down to the weight of the load. As such, we will assume these rows to be errors in the data and remove them from subsequent analyses.
+
+A new dataframe with only the unique shipments, will be saved under **'MC2_edges_unique'.**
+
+### 3.4 Reviewing list of HS Codes
+
+Review the list of hscodes, we note that there are 4,761 unique codes. It is unclear however, if all codes are related to the fishing industry.
+
+```{r}
+# Calculate the number of unique hscode values
+num_unique_hscode <- MC2_edges_unique %>%
+  distinct(hscode) %>%
+  n_distinct()
+
+# Print the number of unique hscode values
+cat("Number of unique hscode values in MC2_edges_unique:", num_unique_hscode, "\n")
+```
+
+To further explore this, hscodes were compared with the Singapore Trade Classification, Customs and Excise Duties [document](https://file.go.gov.sg/stcced2022.pdf). We will look at the top 5 nodes to get a sense of which categories
+
+::: callout-note
+Singapore adopts the 8-digit HS Codes in the ASEAN Harmonised Tariff Nomenclature (AHTN), which is based on the WCO 6-digit level HS Codes. We will be using the first 6 digits to match with codes in our dataset.
+:::
+
+```{r}
+top_5_hscodes <- MC2_edges_unique %>%
+  count(hscode, sort = TRUE) %>%
+  top_n(5)
+
+print(top_5_hscodes)
+```
+
+The table below shows the top 5 HS codes, and its corresponding product categories. This suggest that significant proportion of links on the edges dataset are not related to fishing or related industries.
+
+| No. | HS Code | Category                                                                                                                                                                                            |
+|-------------------|-------------------|-----------------------------------|
+| 1   | 306170  | No Match                                                                                                                                                                                            |
+| 2   | 950300  | Tricycles, scooters, pedal cars and similar wheeled toys; dolls' carriages; dolls; other toys; reduced-size ("scale") models and similar recreational models, working or not; puzzles of all kinds: |
+| 3   | 870899  | Parts, for motor vehicles                                                                                                                                                                           |
+| 4   | 611020  | Jerseys, pullovers, cardigans, waistcoats and similar articles, knitted or crocheted - of cotton                                                                                                    |
+| 5   | 940360  | Other furniture and parts - other wooden furniture                                                                                                                                                  |
+
+As such, using the HS code document as a guide, the following categories were found to be relevant to our area of interest:
+
+| No. | Categories                                                                                                                                                                 | Corresponding Codes                                  |
+|------------------|-------------------------------|-----------------------|
+| 1   | **Chapter 3:** Fish and crustaceans, molluscs and other aquatic invertebrates.                                                                                             | 0301, 0302, 0303, 0304, 0305, 0306, 0307, 0308, 0309 |
+| 2   | **Chapter 15:** Animal, vegetable or microbial fats and oils and their cleavage products                                                                                   | 1504                                                 |
+| 3   | **Chapter 16:** Preparations of meat, of fish, crustaceans, molluscs or other aquatic 73 invertebrates, or of insects.                                                     | 1603, 1604, 1605                                     |
+| 4   | **Chapter 21:** Flours, meals and pellets, of meat or meat offal, of fish or of crustaceans, molluscs or other aquatic invertebrates, unfit for human consumption; greaves | 2301                                                 |
+
+Using the `stringr()` and `filter()` function, we will extract shipments that match the first 4 digits from the table above.This narrows down the number of relevant links to 2,050,59.
+
+```{r}
+desired_hscodes <- c("0301", "0302", "0303", "0304", "0305", "0306", "0307", "0308", "0309", "1504", "1603", "1604", "1605", "2301")
+
+MC2_edges_fishing <- MC2_edges_unique %>%
+  filter(str_sub(hscode, start = 1, end = 4) %in% desired_hscodes)
+
+```
+
+### 3.5 Wrangling attributes
+
+A close examination of the '**MC2_edges_unique'** dataframe reveals that it consists of individual transactions. This is not very useful for visualisation.
+
+In view of this, we will aggregate the rows in two ways. First by source, target and year, and second by source, target and yearmonth. To do so, we will use the following 4 functions from dplyr package; `filter()`, `group()`, `summarise()`, and `ungroup()`.
+
+The 2 new dataframes, edges_ym and edges_y, will also include of the following variables:
+
+-   Weight: Number of shipments between two entities
+-   sumweightkg = Total weight of products for all shipments
+-   avg_weight_per_shipment: Average weight of products per shipment (sumweightkg/weight)
+
+::: callout-note
+As the remaining variables such as valueofgoods_omu, volumeteu and valueofgoodsusd recorded a high proportion of 'NA' or 'O', we will exclude them the new dataframe.
+:::
+
+```{r}
+edges_ym <- MC2_edges_fishing %>%
+  group_by(source, target, yearmonth) %>%
+  summarise(weight = n(), sumweightkg = sum(weightkg), .groups = 'drop') %>%
+  filter(source != target) %>%
+  filter(weight > 1) %>%
+  ungroup() %>%
+  mutate(avg_shipmentwt = sumweightkg / weight)
+
+# Convert yearmonth to date format
+edges_ym$yearmonth <- as.Date(paste0(edges_ym$yearmonth, "-01"))
+
+edges_y <- MC2_edges_fishing %>%
+  group_by(source, target, year) %>%
+  summarise(weight = n(), sumweightkg = sum(weightkg), .groups = 'drop') %>%
+  filter(source != target) %>%
+  filter(weight > 1) %>%
+  ungroup() %>%
+  mutate(avg_shipmentwt = sumweightkg / weight)
+
+```
+
+Using `glimpse()` to review the new dataframe, we see many relationships having less than handful of shipments between each other. Splitting the values up into quartiles, we see that up to 90% of all links have 10 or less shipments between them on a monthly basis.
+
+```{r}
+glimpse(edges_y)
+glimpse(edges_ym)
+
+quartiles_y <- quantile(edges_y$weight, probs = c(0, 0.25, 0.5, 0.75, 0.9, 1))
+print(quartiles_y)
+
+quartiles_ym <- quantile(edges_ym$weight, probs = c(0, 0.25, 0.5, 0.75, 0.9, 1))
+print(quartiles_ym)
+```
+
+::: callout-note
+As these will lead to the network being sparse and challenging to analyse, it will be sensible to remove relationships with only a handful of transactions/shipments. Since only 10% of all business transactions between companies process shipments of 10 and above, we will use this as a guide to filter the data.
+:::
+
+Both dataseta are complete, with no NA value.
+
+```{r}
+edges_ym_10 <- edges_ym %>%
+  filter(weight >= 10)
+
+edges_y_22 <- edges_y %>%
+  filter(weight >= 22)
+
+edges_ym_10 %>%
+  summarise_all(~ sum(is.na(.)) / n())
+
+edges_y_22 %>%
+  summarise_all(~ sum(is.na(.)) / n())
+```
+
+### 3.6 Zooming into outliers
+
+Looking at the average weight of shipment across the 6 years was quite interesting. Specifically, we see a small proportion of shipments that are transacting way beyond the 'normal' weights, with the heaviest going up to 307,800kg. We will filter out companies involved in these transactions and all activities there are associated with to further focus subsequent analyses.
+
+```{r}
+p3 <- ggplot(data = edges_ym_10, aes(x = avg_shipmentwt)) +
+  geom_histogram(binwidth = 100, fill = "steelblue", color = "black") +
+  labs(x = "Average Weight per Shipment", y = "Frequency", title = "Distribution of Average Weight per Shipment") +
+  theme_classic()
+
+p3 <- ggplotly(p3, tooltip = c("avg_shipmentwt"))
+p3
+```
+
+::: callout-note
+Note that after filtering for only outlier nodes, the proportion of nodes with NA for 'shpcountry' and 'rcvcountry' has decreased significantly. We will replace NA with Unknown.
+:::
+
+```{r}
+# Calculate the IQR and determine the outlier threshold
+Q1 <- quantile(edges_ym_10$avg_shipmentwt, 0.25)
+Q3 <- quantile(edges_ym_10$avg_shipmentwt, 0.75)
+IQR <- Q3 - Q1
+outlier_threshold <- 1.5 * IQR
+
+# Identify outliers
+outliers <- edges_ym_10$avg_shipmentwt < (Q1 - outlier_threshold) | edges_ym_10$avg_shipmentwt > (Q3 + outlier_threshold)
+
+# Add a new column to mark outliers
+edges_ym_10$outlier <- ifelse(outliers, "Yes", "No")
+
+# Filter source companies involved in outlier transactions
+filtered_df <- edges_ym_10 %>%
+  group_by(source) %>%
+  filter("Yes" %in% outlier) %>%
+  ungroup()
+
+edges_ym_outlier <- filtered_df %>%
+  mutate(year = substr(yearmonth, 1, 4))
+
+##Nodes for outliers
+# Get unique values from 'source' and 'target' columns
+unique_outliers <- unique(c(edges_ym_outlier$source, edges_ym_outlier$target))
+
+# Filter 'MC2_nodes' based on unique values
+nodes_ym_outlier<- MC2_nodes %>%
+  filter(id %in% unique_outliers)
+
+# Check for NA
+nodes_ym_outlier %>%
+  summarise_all(~ sum(is.na(.)) / n())
+
+# Replace with unknown
+nodes_ym_outlier <- nodes_ym_outlier %>%
+  mutate(
+    shpcountry = if_else(is.na(shpcountry), "Unknown", shpcountry),
+    rcvcountry = if_else(is.na(rcvcountry), "Unknown", rcvcountry)
+  )
+
+##Nodes for ym
+# Step 1: Get unique values from 'source' and 'target' columns
+unique_values <- unique(c(edges_ym_10$source, edges_ym_10$target))
+
+# Step 2: Filter 'MC2_nodes' based on unique values
+nodes_ym_10<- MC2_nodes %>%
+  filter(id %in% unique_values)
+
+##Nodes for y
+# Step 1: Get unique values from 'source' and 'target' columns
+unique_values <- unique(c(edges_y_22$source, edges_y_22$target))
+
+# Step 2: Filter 'MC2_nodes' based on unique values
+nodes_y_22<- MC2_nodes %>%
+  filter(id %in% unique_values)
+
+
+```
+
+## 4 Understanding the data
+
+### 4.1 Nodes
+
+Before plotting the networks. Let's look at each data set seperately. Using `glimspe()`, we see that post data cleaning, there are 194 unique nodes involved in outlier transactions in the dataframe aggregated by year month.
+
+```{r}
+glimpse(nodes_ym_outlier)
+```
+
+Next, we use the count() function to determine the number of companies that are mostly associated to a specific shipping country. This may provide a sense on where a company may have originated from. Dataframe nodes_y\_22 will be used for this analyses since there are more nodes relative to nodes_ym_10. A quick view of the data indicates that these companies are associated with 45 different countries.
+
+```{r}
+summary_shpcountry <- nodes_ym_outlier %>% count(shpcountry)
+
+summary_shpcountry <- summary_shpcountry %>%
+  group_by(shpcountry) %>%
+  summarise(count = sum(n))
+
+summary_shpcountry
+
+```
+
+A bar chart is then plotted for the top five countries among all source firms, and outlier source firms i.e., countries with the most number of 'outlier' shipping firms being associated with. Rows with 'shpcountry' as 'Unknown' were excluded from this analyses.
+
+::: callout-note
+Looking at the overall chart in orange, considering that there are a total of 59 unique countries, it is interesting to note that the top 5 listed in the bar chart below were associated with approximately half of all companies. These countries are likely the bigger players in the fishing industry.
+
+Notably, some changes to the ranking are observed among firms involved in outlier transactions. Oceanus moves to the top spot, with Mawazam at second. Marebak moves from first to third.
+:::
+
+```{r}
+summary_shpcountry <- nodes_y_22 %>%
+  filter(shpcountry != "Unknown") %>%
+  count(shpcountry)
+
+top_5_shpcountry <- summary_shpcountry %>%
+  top_n(5, n)
+
+total_count <- sum(summary_shpcountry$n)
+
+p1 <- ggplot(top_5_shpcountry, aes(x = reorder(shpcountry, -n), y = n)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  labs(title = "Top 5 'shpcountry' by Count", x = "", y = "Count") +
+  geom_text(aes(label = paste0(n, " (", round((n / total_count) * 100), "%)")), vjust = -0.5, color = "black") +
+  theme_classic() +
+  coord_cartesian(ylim = c(0, max(top_5_shpcountry$n) * 1.1))
+
+summary_shpcountry_outlier <- nodes_ym_outlier %>%
+  filter(shpcountry != "Unknown") %>%
+  count(shpcountry)
+
+top_5_countryoutlier <- summary_shpcountry_outlier %>%
+  top_n(5, n)
+
+total_count <- sum(summary_shpcountry_outlier$n)
+
+p2 <- ggplot(top_5_countryoutlier, aes(x = reorder(shpcountry, -n), y = n)) +
+  geom_bar(stat = "identity", fill = "lightblue") +
+  labs(title = "Top 5 'shpcountry' by Count (Among outliers)", x = "Most Associated Shipping Country", y = "Count") +
+  geom_text(aes(label = paste0(n, " (", round((n / total_count) * 100), "%)")), vjust = -0.5, color = "black") +
+  theme_classic() +
+  coord_cartesian(ylim = c(0, max(top_5_countryoutlier$n) * 1.1))
+
+# Combine p1 and p2 plots vertically
+combined_plot <- plot_grid(p1, p2, ncol = 1, align = "v")
+
+# Display the combined plot
+combined_plot
+
+
+```
+
+### 4.2 Edges
+
+Next, using the `groupby()` and `summarize()` function, we will review the shipment trends across the time period of the provided data.
+
+```{r}
+summary_yearmonth <- edges_ym_outlier %>%
+  group_by(yearmonth) %>%
+  summarize(total_weight = sum(sumweightkg), total_count = sum(weight)) %>%
+  ungroup() %>%
+  mutate(avg_shipmentwt = total_weight / total_count)
+
+# Check the updated summary_yearmonth data
+print(summary_yearmonth)
+
+```
+
+Looking at the line charts below, we see that shipment and weight trends largely coincide with one another. However, if we look closer at 2032 where number of shipments generally lulled, there was a significant spike in the total weight of shipments.
+
+::: callout-important
+The odd spike in 2032 may point towards possible illegal activities and is worth looking into in subsequent analyses.
+:::
+
+```{r}
+
+p3 <- ggplot(summary_yearmonth, aes(x = yearmonth)) +
+  geom_line(aes(y = total_count, color = "Total Count", group = 1), size = 0.5) +
+  labs(x = "Year",
+       y = "Number of Shipments") +
+  scale_color_manual(values = c("Total Count" = "steelblue")) +
+  theme_classic() +
+  theme(legend.position = "bottom") +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y")
+
+p4 <- ggplot(summary_yearmonth, aes(x = yearmonth)) +
+  geom_line(aes(y = total_weight, color = "Total Weight", group = 1), size = 0.5) +
+  labs(x = "Year",
+       y = "Weight of Shipments") +
+  scale_color_manual(values = c("Total Weight" = "orange")) +
+  theme_classic() +
+  theme(legend.position = "bottom") +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y")
+
+# Convert individual ggplot charts to plotly objects
+p3 <- ggplotly(p3, tooltip = c("x", "y"))
+p4 <- ggplotly(p4, tooltip = c("x", "y"))
+
+# Create the subplot
+subplot <- subplot(p3, p4, nrows = 2, heights = c(0.5, 0.5))
+
+# Remove the legend title
+subplot <- subplot %>% layout(legend = list(title = list(text = "")))
+
+# Set the subplot title
+subplot <- subplot %>% layout(title = "Total Number and Weight of Shipments Over Time",
+                              showlegend = TRUE)
+
+# Adjust the plot margins
+subplot <- subplot %>% layout(margin = list(t = 50))
+
+# Display the stacked plot with title
+subplot
+```
+
+Next, we look at shipment trends by source and target companies over time. One of the telltale signs of illegal fishing is the opening and closing of such companies within short span of time, either because they were caught, or to avoid getting caught.
+
+::: callout-note
+From the heatmap below, we can identify a few potential source companies to look into. For example:
+
+-   Shipping S.A. de C.V.: This source node only made 1 transaction over the 6 years; but it's load was the heaviest.
+-   Saltsea & Inc Carriers: The shipments by this firm is sporadic, with large time breaks in between.
+-   Marine Mates Pic Delivery: The shipments by this firm is sporadic.
+
+It will be interesting to see how these source nodes map out in the overall network.
+:::
+
+```{r}
+# Define custom color palette from blue to yellow
+my_palette <- c("#0000FF", "#FFFF00", "#FF0000")  # Example colors
+
+# Plot heatmap with custom color palette
+ggplot(edges_ym_outlier, aes(x = yearmonth, y = source, fill = avg_shipmentwt)) +
+  geom_tile() +
+  labs(x = "Time Period", y = "Source", fill = "Av. Weight") +
+  scale_fill_gradientn(colors = my_palette, limits = range(edges_ym_outlier$avg_shipmentwt),
+                       breaks = seq(min(edges_ym_outlier$avg_shipmentwt), max(edges_ym_outlier$avg_shipmentwt), length.out = length(my_palette)),
+                       labels = scales::number_format(accuracy = 0.01),
+                       guide = guide_colorbar(title.position = "top")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1),
+        axis.text.y = element_text(size = 3),
+        plot.margin = margin(20, 20, 20, 120),
+        legend.position = "bottom",
+        legend.key.height = unit(0.3, "cm"),
+        legend.key.width = unit(1.5,"cm")) +
+  ggtitle("Average weight of Shipment by Source")
+```
+
+## 5 Understanding underlying networks
+
+### 5.1 Overall network by in and out degree
+
+Next, the nodes and edge datasets are plotting into a network graph using visNetwork. Looking at the overall graph, while there is a clear connected graph in the middle, there are also many isolated nodes. The main network however, is clumped together, and it is not very useful visually for analyses.
+
+```{r}
+edges_ym_outlier_g <- edges_ym_outlier %>%
+  rename(from = source, to = target)
+
+outlier_graph <- tbl_graph(nodes = nodes_ym_outlier,
+                           edges = edges_ym_outlier_g, 
+                           directed = TRUE)
+
+#Plot outlier graph
+ggraph(outlier_graph, layout = 'fr') + 
+  geom_edge_link(aes()) +
+  geom_node_point(aes()) +
+  theme_graph() +
+  ggtitle("Outlier Graph")
+```
+
+As such using functions available in tidyverse, we calculate the in and out degree using centrality_degree(), to provide an additional layer.
+
+```{r}
+# Calculate in-degree values
+outlier_graph <- outlier_graph %>%
+  activate(nodes) %>%
+  mutate(in_degree = centrality_degree(mode = "in"))
+
+# Plot the graph by in degree
+g <- ggraph(outlier_graph, layout = 'linear', circular = TRUE) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_edge_link(aes(width = weight), color = "grey", alpha = 0.2) +
+  geom_node_point(aes(size = in_degree), color = "lightblue", alpha = 0.6) +
+  scale_size(range = c(1, 10)) +
+  theme_graph() +
+  ggtitle("Outlier nodes by in-degree")
+
+g
+```
+
+```{r}
+# Calculate in-degree values
+outlier_graph <- outlier_graph %>%
+  activate(nodes) %>%
+  mutate(out_degree = centrality_degree(mode = "out"))
+
+# Plot the graph
+g <- ggraph(outlier_graph, layout = 'linear', circular = TRUE) +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_edge_link(aes(width = weight), color = "grey", alpha = 0.2) +
+  geom_node_point(aes(size = out_degree), color = "orange", alpha = 0.6) +
+  scale_size(range = c(1, 10)) +
+  theme_graph() +
+  ggtitle("Outlier nodes by out-degree")
+
+g
+```
+
+::: callout-note
+From the charts, we can better understand the proportion of key players with a high number of in and out degrees.Specifically:
+
+-   We see a smaller proportion of nodes with high in-degrees, approximately 20% of all nodes.
+-   This trend is slightly different when we look at out-degree, as we observe a larger proportion of bigger nodes in the circular graph below.
+
+Those with high in-degree represents companies that take in a lot of shipments, while those with high out-degress are those that delivery many shipments. These nodes are likely key players in the eco-system and act like hubs. However, a large majority of nodes are connected to only a handful of other nodes. This trend was observed in both charts.
+
+Keep in mind that this dataset is limited to companies with at least one transaction that is considered an outlier i.e., in larger amounts. While is may not be surprising for 'hub' nodes to transact in large amounts, it comes across fishy when small players with few partners are transacting at such large amounts, and to a small number of business partners.
+:::
+
+### 5.2 Zooming into nodes of interest
+
+Recall earlier that we identifed a few companies with odd transaction patterns over the years.
+
+-   Shipping S.A. de C.V.: This source node only made 1 transaction over the 6 years; but it's load was the heaviest.
+-   Saltsea & Inc Carriers: The shipments by this firm is sporadic, with large time breaks in between.
+-   Marine Mates Pic Delivery: The shipments by this firm is sporadic.
+
+For the scope of this exercise, let's explore Saltsea & Inc Carriers. Clicking onto the node in the graph, we see the company only has 1 partner, Pao Gan SE Seal. Since this is the only edge on the graph tied to Saltsea & Inc, we will take a closer look at it's partners to understand business patterns.
+
+```{r}
+
+# Rename 'source' column to 'from' and 'target' column to 'to' 
+edges_ym_outlier_g <- edges_ym_outlier %>%
+  rename(from = source, to = target)
+
+library(visNetwork)
+
+# Create the network graph
+visNetwork(
+  nodes = nodes_ym_outlier,
+  edges = edges_ym_outlier_g
+) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE,
+             nodesIdSelection = TRUE) %>%
+  visEdges(arrows = "to", 
+           smooth = list(enabled = TRUE, 
+                         type = "curvedCW"))
+
+```
+
+### 5.3 Transaction Patterns - Pao Gan SE Seal and Mar del Este CJSC
+
+Extracting only business partners of Pao Gan SE Seal, we see that the company has multiple partners with long intervals between shipments. To assess if this is common within the industry, we turn to Saltsea & Inc Carriers' second partner Mar del Este CJSC. It is interesting to note that transaction patterns from both companies reveal similar business patterns i.e., a mix of long term, and short term partners.
+
+```{r}
+Pao_df <- edges_ym_outlier[edges_ym_outlier$target == "Pao gan SE Seal", ]
+
+ggplot(Pao_df, aes(x = yearmonth, y = source, fill = avg_shipmentwt)) +
+  geom_tile() +
+  scale_fill_gradient(low = "lightyellow", high = "red") +
+  labs(x = "Year-Month", y = "Source Company", fill = "Av. weight") +
+  ggtitle("Shipment patterns by Av. Weight - Pao gan SE Seal")
+
+
+```
+
+```{r}
+Mar_df <- edges_ym_outlier[edges_ym_outlier$target == "Mar del Este CJSC", ]
+
+ggplot(Mar_df, aes(x = yearmonth, y = source, fill = avg_shipmentwt)) +
+  geom_tile() +
+  scale_fill_gradient(low = "lightyellow", high = "red") +
+  labs(x = "Year-Month", y = "Source Company", fill = "Av. weight") +
+  ggtitle("Shipment patterns by Av. Weight - Mar del Este CJSC")
+
+```
+
+### 5.4 Proportion of outlier transactions - Pao Gan SE Seal
+
+Perhaps a additional layer to look at, would be the proportion of 'outlier' transactions made by these source nodes.
+
+::: callout-note
+From the table below, we can see that for the business partners of Pao Gan SE Seal, there were 3 companies where all shipments were heavy and considered outliers. These companies are:
+
+-   SaltSea & Inc Carriers
+-   Niger River Delta Oyj Abalone, and
+-   Scottish Oysters Flotsam S.p.A. Services.
+
+While inconclusive, the trick to catching illegal fishing activities may indeed involve multiple variables.
+:::
+
+```{r}
+
+
+# Calculate the total count, proportion of "Yes" outliers, and proportion of "No" outliers based on the source
+proportion_data <- Pao_df %>%
+  group_by(source) %>%
+  summarise(
+    total_count = n(),
+    proportion_yes = sum(outlier == "Yes") / n(),
+    proportion_no = sum(outlier == "No") / n()
+  )
+
+library(knitr)
+library(kableExtra)
+
+# Convert proportion_data table to a nice table format
+proportion_table <- kable(proportion_data, format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+# Display the table
+proportion_table
+
+```
+
+## 6 Conclusion and Suggestions for Group Project
+
+-   Looking at the trade dataset, a sizable proportion of businesses trade exceptionally high weight of products. It is crucial that we look at these data points to better understand such occurrences.
+
+-   A smaller proportion of nodes with high in-degrees were noted, meaning aside from a few, businesses receiving goods tend to not have as many transactions, relative to those shipping produce. This is in line with findings from our heatmap, as we see many companies shipping throughout the year, across the 6 years.
+
+-   However, it is also common for businesses to pause and have long intervals between shipments. While this may come across as suspicious, it is likely insufficient to signal illegal activities. As such, it may be useful to explore other indicators as well, a view them as a group. In this exercise, we studied two indicators transaction patterns and proportion of outlier shipments. Other potential indicators may be:
+
+    -   Number of small one-off shipments
+
+    -   Number of business partners - assuming most would not want to be associated with such activities
