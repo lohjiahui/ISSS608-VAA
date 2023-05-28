@@ -213,7 +213,7 @@ print(top_5_hscodes)
 The table below shows the top 5 HS codes, and its corresponding product categories. This suggest that significant proportion of links on the edges dataset are not related to fishing or related industries.
 
 | No. | HS Code | Category                                                                                                                                                                                            |
-|-------------------|-------------------|-----------------------------------|
+|-----|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | 1   | 306170  | No Match                                                                                                                                                                                            |
 | 2   | 950300  | Tricycles, scooters, pedal cars and similar wheeled toys; dolls' carriages; dolls; other toys; reduced-size ("scale") models and similar recreational models, working or not; puzzles of all kinds: |
 | 3   | 870899  | Parts, for motor vehicles                                                                                                                                                                           |
@@ -223,7 +223,7 @@ The table below shows the top 5 HS codes, and its corresponding product categori
 As such, using the HS code document as a guide, the following categories were found to be relevant to our area of interest:
 
 | No. | Categories                                                                                                                                                                 | Corresponding Codes                                  |
-|------------------|-------------------------------|-----------------------|
+|-----|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------|
 | 1   | **Chapter 3:** Fish and crustaceans, molluscs and other aquatic invertebrates.                                                                                             | 0301, 0302, 0303, 0304, 0305, 0306, 0307, 0308, 0309 |
 | 2   | **Chapter 15:** Animal, vegetable or microbial fats and oils and their cleavage products                                                                                   | 1504                                                 |
 | 3   | **Chapter 16:** Preparations of meat, of fish, crustaceans, molluscs or other aquatic 73 invertebrates, or of insects.                                                     | 1603, 1604, 1605                                     |
