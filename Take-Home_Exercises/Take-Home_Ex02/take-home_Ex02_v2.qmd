@@ -232,7 +232,7 @@ Singapore adopts the 8-digit HS Codes in the ASEAN Harmonised Tariff Nomenclatur
 Using both HS code documents as a guide, the following categories were found to be relevant to our area of interest:
 
 | No. | Categories                                                                                                                                                                 | Corresponding Codes                     |
-|------------|-----------------------------------------|-----------------|
+|-----------------|---------------------------------------|-----------------|
 | 1   | **Chapter 3:** Fish and crustaceans, molluscs and other aquatic invertebrates.                                                                                             | 0301, 302, 303, 304, 305, 306, 307, 308 |
 | 2   | **Chapter 15:** Animal, vegetable or microbial fats and oils and their cleavage products                                                                                   | 1504                                    |
 | 3   | **Chapter 16:** Preparations of meat, of fish, crustaceans, molluscs or other aquatic 73 invertebrates, or of insects.                                                     | 1603, 1604, 1605                        |
@@ -649,13 +649,13 @@ set.seed(1234)
 # Calculate out-degree values
 top4_graph <- top4_graph %>%
   activate(nodes) %>%
-  mutate(in_degree = centrality_degree(mode = "out"))
+  mutate(out_degree = centrality_degree(mode = "out"))
 
 # Plot the graph by in degree
 g <- ggraph(top4_graph, layout = 'fr') +
   scale_edge_width(range = c(0.1, 5)) +
   geom_edge_link(aes(width = weight), color = "grey", alpha = 0.2) +
-  geom_node_point(aes(size = in_degree), color = "orange", alpha = 0.6) +
+  geom_node_point(aes(size = out_degree), color = "orange", alpha = 0.6) +
   scale_size(range = c(1, 10)) +
   theme_graph() +
   ggtitle("Top 4 nodes - Out-degree")
