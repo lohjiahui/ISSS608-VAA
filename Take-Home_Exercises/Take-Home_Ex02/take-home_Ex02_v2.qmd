@@ -232,7 +232,7 @@ Singapore adopts the 8-digit HS Codes in the ASEAN Harmonised Tariff Nomenclatur
 Using both HS code documents as a guide, the following categories were found to be relevant to our area of interest:
 
 | No. | Categories                                                                                                                                                                 | Corresponding Codes                     |
-|------------------|-------------------------------------|------------------|
+|-----|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------|
 | 1   | **Chapter 3:** Fish and crustaceans, molluscs and other aquatic invertebrates.                                                                                             | 0301, 302, 303, 304, 305, 306, 307, 308 |
 | 2   | **Chapter 15:** Animal, vegetable or microbial fats and oils and their cleavage products                                                                                   | 1504                                    |
 | 3   | **Chapter 16:** Preparations of meat, of fish, crustaceans, molluscs or other aquatic 73 invertebrates, or of insects.                                                     | 1603, 1604, 1605                        |
@@ -696,17 +696,17 @@ g <- ggraph(top4_graph, layout = 'fr') +
 g
 
 ```
-To understand if these top nodes, and its respective communities have shifted overtime, we will divide the nodes and edges into two time frames; the first group from 2028 to 2031, and second group from 2031 to 2034. 
 
-Looking at both charts, a few important observations were noted: 
+To understand if these top nodes, and its respective communities have shifted overtime, we will divide the nodes and edges into two time frames; the first group from 2028 to 2031, and second group from 2031 to 2034.
 
-- Looking at the two charts, we see that less nodes were involved in the trading of goods in the later years. This could suggest a trend of smaller players being outplayed by the bigger boys and forced out of the industry. 
-- While the first chart churned out 4 communities, aligned with the overall chart above, we see that the chart representing the last 3 years of the data only identified 3 clusters. This means that there are 3 main players, instead of 4 during this period, among the nodes with high betweenness. It is unclear however, if the 4th nodes has merged with another cluster, or was it just sidelined over the years. 
+Looking at both charts, a few important observations were noted:
 
-:::callout-note
-There may be value in tracking the communities, and its respective nodes over the years, to take a look at this trend. To understand shifting communities, and underlying reasons behind these shifts. 
-::: 
+-   Looking at the two charts, we see that less nodes were involved in the trading of goods in the later years. This could suggest a trend of smaller players being outplayed by the bigger boys and forced out of the industry.
+-   While the first chart churned out 4 communities, aligned with the overall chart above, we see that the chart representing the last 3 years of the data only identified 3 clusters. This means that there are 3 main players, instead of 4 during this period, among the nodes with high betweenness. It is unclear however, if the 4th nodes has merged with another cluster, or was it just sidelined over the years.
 
+::: callout-note
+There may be value in tracking the communities, and its respective nodes over the years, to take a look at this trend. To understand shifting communities, and underlying reasons behind these shifts.
+:::
 
 ```{r}
 set.seed(1234)
@@ -784,7 +784,7 @@ g
 
 -   Looking at the network graph of the top 4 players, we noticed there were a handful of smaller businesses that interact with multiple large nodes, instead of fitting nicely into one cluster. When looking at the in and out-degree of these 'in-between' nodes, these nodes tended to have higher in degrees versus out degree, suggesting that there are businesses who buys instead of supply produce. As such, these nodes seem unlikely to be contributing to illegal fishing activites.
 
-- Lastly, there may be value in tracking the communities, and its respective nodes over the years,to understand the shift in dominance among companies. The rise and perhaps fall of these companies and its related relationships may shed light towards illegal fishing activities.
+-   Lastly, there may be value in tracking the communities, and its respective nodes over the years,to understand the shift in dominance among companies. The rise and perhaps fall of these companies and its related relationships may shed light towards illegal fishing activities.
 
 ## 6 Suggestions for Group Project
 
@@ -792,6 +792,4 @@ g
 
 -   Currently, this exercise only look at number of shipments and its associated pattern. However, they is also value in looking at other measures such as total weight, or average weight per shipment, to understand if there are odd relationships on that front.
 
--   Currently, the graphs mapping the communities are static, and does not show the movement of these edges and nodes across time. However, since the static graphs seem to suggest potential significant shifts, there might be value in finding out how we can track these changes, i.e., movement of communities over time. Doing so will help us answer questions like, did a significant node company had to shut down over the years? Who did its business partner shift towards? And why. 
-
-
+-   Currently, the graphs mapping the communities are static, and does not show the movement of these edges and nodes across time. However, since the static graphs seem to suggest potential significant shifts, there might be value in finding out how we can track these changes, i.e., movement of communities over time. Doing so will help us answer questions like, did a significant node company had to shut down over the years? Who did its business partner shift towards? And why.

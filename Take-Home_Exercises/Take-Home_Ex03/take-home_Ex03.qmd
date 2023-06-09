@@ -1,0 +1,393 @@
+---
+title: "Take Home Exercise 3"
+author: "Loh Jiahui"
+date: "8 June 2023"
+date-modified: "`r Sys.Date()`"
+execute: 
+  warning: false
+editor: visual
+---
+
+## 1 Background - [VAST Mini Challenge 3](https://vast-challenge.github.io/2023/MC3.html)
+
+FishEye International, a non-profit focused on countering illegal, unreported, and unregulated (IUU) fishing, has been given access to an international finance corporation's database on fishing related companies. Based on their experience, the organisation found that companies with anomalous structures are far more likely to be involved in illegal fishing activities.
+
+With the provided data, the objective of this exercise is to use visual analytics to identify anomalies in the business groups present in the knowledge graph. 
+
+### 1.1 The data
+
+The data used for this exercises will be from Mini Challenge 3 of the VAST Challenge. Specifically, Fisheye has transformed the data into a knowledge graph consisting 27,622 nodes and 24,038 edges. Details of the attributes provided are listed below:
+
+**Node:**
+
+-   **type** -- Type of node as defined above. 
+-   **country** -- Country associated with the entity. This can be a full country or a two-letter country code.
+-   **product_services** -- Description of product services that the "id" node does. 
+-   **revenue_omu** -- Operating revenue of the "id" node in Oceanus Monetary Units. 
+-   **id** -- Identifier of the node is also the name of the entry.
+-   **role** -- The subset of the "type" node, not in every node attribute. 
+-   **dataset** -- Always "MC3". 
+
+**Links:**
+
+-   **type** -- Type of the edge as defined above. 
+-   **source** -- ID of the source node. 
+-   **target** -- ID of the target node. 
+-   **dataset** -- Always "MC3". 
+
+## 2 Load packages and import data
+
+### 2.1 Loading the data
+
+First, the necessary packages are installed and loaded onto RStudio using p_load() from the pacman library.
+
+```{r}
+#| code-fold: true
+
+pacman::p_load(jsonlite, tidygraph, ggraph, visNetwork, graphlayouts, ggforce, tidytext, tidyverse, skimr, stringr)
+```
+
+### 2.2 Importing the data
+
+Similar to mini-challenge 2, the data files provided for the challenge are in json format. As such, the dataset will be imported using jsonlite::fromJSON and saved as 'MC3'.
+
+```{r}
+#| code-fold: true
+mc3 <- fromJSON("/Users/jiahuiloh/lohjiahui/ISSS608-VAA/Take-Home_Exercises/Take-Home_Ex03/data/MC3.json")
+```
+
+Using the glimpse() function, we observe that the data is not in the usual dataframe format, but in a list format instead. The final output if hidden due to output length. Using the image below however, we can see that list format. Keeping this format would make subsequent data wrangling tasks challenging. As such, we will need to transform the data format.
+
+```{r}
+#| eval: false
+
+glimpse(mc3)
+```
+
+![](images/List.png){width="511"}
+
+#### 2.2.1 Transforming links file to tibble
+
+The code chunk below will be used to extract the links data.frame from mc3 and save it as a tibble dataframe called edges.
+
+```{r}
+#| code-fold: true
+edges <- as_tibble(mc3$links) %>%
+  distinct() %>%
+  mutate(source = as.character(source),
+         target = as.character(target),
+         type = as.character(type)) %>%
+  group_by(source, target, type) %>%
+    summarise(weights = n()) %>%
+  filter(source != target) %>%
+  ungroup()
+```
+
+::: {.callout-note icon="false"}
+## Things to learn from the code chunk above
+
+-   `distinct()` is used to ensure that there will be no duplicated records.
+-   `mutate()` and `as.character()` are used to convert the field data type from list to character.
+-   `group_by()` and `summarise()` are used to count the number of unique links.
+-   the `filter(source!=target)` is to ensure that no record with similar source and target.
+:::
+
+#### 2.2.2 Transforming nodes file to tibble
+
+A similar approach was also taken the transform the nodes file, to convert it to tibble. The additional function select() below is used to re-organise the fields in the dataset so that it is more suitable for analyses.
+
+```{r}
+#| code-fold: true
+nodes <- as_tibble(mc3$nodes) %>%
+  mutate(country = as.character(country),
+         id = as.character(id),
+         product_services = as.character(product_services),
+         revenue_omu = as.numeric(as.character(revenue_omu)),
+         type = as.character(type)) %>%
+  select(id, country, type, revenue_omu, product_services)
+```
+
+## 3 Data Exploration and Cleaning
+
+### 3.1 Edge dataframe
+
+#### 3.1.1 Missing data and data structure
+
+Using `skim()` of skimr package, we display the summary statistics of the nodes tibble data frame. Aside from the revenue_omu variable which noted 21,515 missing data points, the rest of the attributes appeared complete.
+
+```{r}
+#| code-fold: true
+skim(edges)
+```
+
+::: callout-note
+Looking at the summary above, a few observations can be made:
+
+\- No missing data was observed
+\- Oddly, the maximum length of a source node was exceptionally long. This calls for some investigation. 
+:::
+
+#### 3.1.2 Investigating source nodes in edges file
+
+While we have broken down the mc3 data from it's original list format, it seems like some of the companies are still concantenated/grouped. Eye-balling the list, we see that these groups can be a list of repeated companies, or a mix of companies. For cleanere analyses, we will need to break this list down to individual source companies. 
+
+```{r}
+#| code-fold: true
+top_sources <- edges %>%
+  group_by(source) %>%
+  summarise(node_length = nchar(source), .groups = "drop") %>%
+  top_n(10, node_length) %>%
+  arrange(desc(node_length))
+
+# Printing the top sources
+print(top_sources)
+```
+::: {.callout-note icon="false"}
+## Things to learn from the code chunk above
+
+-   The data frame is grouped by the "source" variable using group_by()
+-   Length is then calculated for each source node name using nchar().
+-   Next, top_n() is used to select the top 5 source nodes based on the length of their names
+-   Finally, we arrange the results in descending order of the "node_length" using arrange().
+:::
+
+The code chunk below uses the seperate_rows() function, and split rows using ',' as a seperator. Redundant characters like 'c' or '()' will also be removed. The rows are then re-grouped again. The cleaned dataframe is saved as 'edges_new'. 
+
+```{r}
+#| code-fold: true
+
+edges_new <- edges %>%
+  separate_rows(source, sep = ", ") %>%
+  mutate(source = gsub('^c\\(|"|\\)$', '', source))
+
+edges_new <- edges_new %>%
+  group_by(source, target, type) %>%
+  summarise(weight = n()) %>%
+  filter(source != target) %>%
+  filter(weight > 1) %>%
+  ungroup() 
+```
+
+In the code chunk below, datatable() of DT package is used to display edges_new tibble data frame as an interactive table on the html document. When we toggle wit the weight variable, we now see individuals like Cole Allen being associated multiple times with Niger River Delta S.p.A.
+
+:::callout-note
+As it is too early to decide if the replicated rows in the edges dataset suggest suspicious associated, or simply an error in the data, we will not remove the replicated rows for now. 
+:::
+
+```{r}
+#| code-fold: true
+DT::datatable(edges_new)
+```
+
+### 3.2 Nodes dataframe
+
+#### 3.2.1 Missing data and duplicates
+
+Now that the edges dataframe is processed, we will proceed to review the nodes dataframe. Using `skim()` of skimr package, we display the summary statistics of the nodes tibble data frame. Aside from the revenue_omu variable which noted 21,515 missing data points, the rest of the attributes appeared complete.
+
+```{r}
+#| code-fold: true
+skim(nodes)
+```
+
+We will also check for duplicates using the `distinct()` function from dplyr. 2,595 duplicated nodes were found; these nodes will be removed from subsequent analyses. The unique set of nodes will be saved under 'nodes_distinct'.
+
+```{r}
+#| code-fold: true
+
+#Nodes
+# Remove duplicated rows and keep only unique rows
+nodes_distinct <-distinct(nodes)
+
+# Calculate number of removed duplicated rows
+num_removed_rows <- nrow(nodes) - nrow(nodes_distinct)
+
+# Print the number of duplicated rows
+cat("Number of duplicated rows in nodes:", num_removed_rows, "\n")
+```
+
+#### 3.2.2 Understand product_services
+
+Looking at the summary table above, there are 3,244 unique categories of products and services. However, it is not clear if all categories are related to the fishing industry. Let's take a closer look.
+
+```{r}
+#| code-fold: true
+
+top_categories <- nodes_distinct %>%
+  count(product_services, sort = TRUE) %>%
+  top_n(10)
+
+# Renaming the columns
+top_categories <- top_categories %>%
+  rename(Category = product_services, Occurrences = n)
+
+# Printing the table
+print(top_categories)
+```
+
+::: callout-note
+Looking at the table above, a few observations can be made:
+
+\- A larger majority of nodes had 'character(0)' or unknown as their given categories. A quick review of the data found that nodes that were beneficial owners or company contacts were categorised under 'character(0)'. Since these inidividuals are not companies, it is sensible that they not be categorised into one. As such we will rename these as 'NA'. 
+
+\- Even in the top 10, there were categories that were non-fishing related e.g., Footwear. To narrow now the relevant nodes, we will need to identify categories that are fishing related.
+:::
+
+The code chunk below will change all 'character(0)' and 'Unknown' to 'NA'.
+
+```{r}
+#| code-fold: true
+
+nodes_distinct <- nodes_distinct %>%
+  mutate(product_services = ifelse(product_services %in% c("character(0)", "Unknown"), NA, product_services))
+```
+
+::: {.callout-note icon="false"}
+## Things to learn from the code chunk above
+
+-   The mutate() function allows us to create or modify columns in a data frame.
+-   Inside the mutate() function, the ifelse() function is used to conditionally replace the "character(0)" values with NA. If the value of "product_services" is "character(0)", it will be replaced with NA.
+:::
+
+Next, using text analytics, we will attempt to filter out only companies that are likely associated with the fishing industry. 
+
+```{r}
+#| code-fold: true
+
+token_nodes <- nodes_distinct %>%
+  unnest_tokens(word, 
+                product_services)
+
+stopwords_removed <- token_nodes %>% 
+  anti_join(stop_words)
+```
+
+The bar chart below helps us to visualise the top 15 token words from the variable 'product_services'. These words can serve as guide, to help us filter out product and service categories that are likely associated with the fishing industry. 
+
+```{r}
+#| code-fold: true
+
+stopwords_removed %>%
+  count(word, sort = TRUE) %>%
+  top_n(20) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(x = word, y = n)) +
+  geom_col() +
+  geom_text(aes(label = n), vjust = 0.5, hjust = -0.3, size = 3, color = "black") +  # Add labels on bars
+  xlab(NULL) +
+  coord_flip() +
+  labs(x = "Count",
+       y = "Unique words",
+       title = "Count of Top 15 unique words in 'product_services' field") +
+  theme_classic()
+
+```
+The code chunk below helps us filter out categories based on what we have assessed as useful. For example, words like fish or seafood would be included, but words like adhesives or bags will be excluded. The result is a shorter list of nodes with firms
+
+```{r}
+#| code-fold: true
+# List of words to filter by
+words_to_include <- c("fish", "seafood", "frozen", "food", "fresh", "shrimp", "salmon", "tuna", "shellfish", "crabs", "squid", "mollusks", "crustaceans", "lobster", "oysters", "clams", "bass", "trout", "tuna", "sea", "ocean", "shipping", "shipments", "shipment", "pier", "marine", NA)
+
+nodes_final <- nodes_distinct %>%
+  filter(str_detect(product_services, paste(words_to_include, collapse = "|", sep = "")) | is.na(product_services))
+
+print(nodes_final)
+
+```
+
+::: {.callout-note icon="false"}
+## Things to learn from the code chunk above
+
+-   The str_detect() function from the stringr package is applied to the 'product_services' column to check if words in the 'words_to_include' list are present in 'product_services'. 
+-   The is.na() function us used to include all 'NA' values
+-   the logical OR (|) operator is used to check if either the 'product_services' column contains any of the specified words or if it is NA. 
+:::
+
+### 3.2.3 Align nodes and edge dataframes 
+
+Now, we will need to reconcile the nodes and edges dataframe. Instead of filtering just by matching the 'id' from nodes and 'source' from the edge dataframe, as we are looking to explore odd relationships, we will be doing the following:
+
+1. Identify matching 'id' and 'source' companies
+2. Extract all 'target' values associated with these companies. Note that one company can have multiple individuals associated with it.
+3. Also, because an individual can be associated with multiple companies, we will keep all source companies that are linked with the extracted 'target' list in point 2. 
+4. We will then identify the additional source companies, and add them back to the node list. 
+
+This data set will set as our final data set for analyses. 
+
+```{r}
+###Step 1 and 2
+
+# Extract target values based on matching source with nodes_final$id
+extracted_targets <- edges_new %>%
+  filter(source %in% nodes_final$id) %>%
+  select(target)
+
+# Filter edges_new to include only the extracted target values
+edges_final <- edges_new %>%
+  filter(target %in% extracted_targets$target)
+
+# Find the list of values in 'target' that were not extracted
+not_extracted_targets <- edges_new %>%
+  filter(!target %in% extracted_targets$target) %>%
+  distinct(target)
+
+# Remove not_extracted_targets from the 'id' column in nodes_final
+nodes_final <- nodes_final %>%
+  filter(!id %in% not_extracted_targets$target)
+
+###Step 3 and 4
+# Find additional source values not in nodes_final$id
+additional_sources <- edges_final %>%
+  filter(!source %in% nodes_final$id) %>%
+  distinct(source)
+
+# Extract the additional nodes from the nodes_distinct dataframe
+additional_nodes <- nodes %>%
+  filter(id %in% additional_sources$source)
+
+# Add the additional nodes to the nodes_final dataframe
+nodes_final <- rbind(nodes_final, additional_nodes)
+
+```
+
+
+```{r}
+# Get the unique nodes in the 'id' column of the 'nodes_filtered' dataframe
+unique_nodes_nodes <- unique(nodes_final$id)
+
+# Get the unique nodes in the 'source' and 'target' columns of the 'edges_new' dataframe
+unique_nodes_edges <- unique(c(edges_final$source, edges_final$target))
+
+# Check if the list of nodes is the same
+nodes_match <- all(unique_nodes_nodes %in% unique_nodes_edges) & all(unique_nodes_edges %in% unique_nodes_nodes)
+
+# Printing the result
+print(nodes_match)
+```
+
+
+```{r}
+# Find nodes in 'unique_nodes_nodes' that are not present in 'unique_nodes_edges'
+missing_nodes_in_edges <- setdiff(unique_nodes_nodes, unique_nodes_edges)
+
+# Find nodes in 'unique_nodes_edges' that are not present in 'unique_nodes_nodes'
+missing_nodes_in_nodes <- setdiff(unique_nodes_edges, unique_nodes_nodes)
+
+# Print the missing nodes in 'edges_final' and 'nodes_final'
+print(missing_nodes_in_edges)
+#print(missing_nodes_in_nodes)
+
+```
+
+
+```{r}
+# Filter edges_new based on matching 'source' and 'target' with 'id' in nodes_final
+aligned_edges <- edges_new %>%
+  filter(source %in% nodes_final$id, target %in% nodes_final$id)
+
+# Update nodes_final to include only the relevant nodes based on aligned_edges
+aligned_nodes <- nodes_final %>%
+  filter(id %in% unique(c(aligned_edges$source, aligned_edges$target)))
+```
+

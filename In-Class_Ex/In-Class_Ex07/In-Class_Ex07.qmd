@@ -1,0 +1,74 @@
+---
+title: "Time on the Horizon: ggHoriPlot methods"
+date: "3/6/2023"
+date-modefied: "`r Sys.Date() `"
+format: html
+execute: 
+  echo: true
+  eval: true
+  warning: false
+  freeze: auto
+---
+
+## Getting Started - Load packages and import data
+
+Before getting start, make sure that ggHoriPlot has been included in the pacman::p_load(...) statement above.
+
+```{r}
+#| code-fold: true
+pacman::p_load(ggHoriPlot, ggthemes, tidyverse) #no need to include lubridate here because lubridate is part of tidyverse library
+```
+
+Use the code chunk below to import the AVERP.csv file into R environment. The data file contains data on the Average Retail Prices of Selected Consumer Items. 
+
+```{r}
+#| code-fold: true
+averp <- read_csv("data/AVERP.csv") %>%
+  mutate(`Date` = dmy(`Date`)) #need to mutate because the original data is in chr format
+```
+
+## Plotting the horizon graph
+
+The code chunk below will be used to plot the horizon graph.
+
+```{r}
+#| code-fold: true
+
+averp %>% 
+  filter(Date >= "2018-01-01") %>% #this line filters specific dates of interest
+  ggplot() + #calls ggplot, necessary since the horizon plot is an extension of ggplot
+  geom_horizon(aes(x = Date, y=Values), 
+               origin = "midpoint", 
+               horizonscale = 6)+ #indicating 6 months interval
+  facet_grid(`Consumer Items`~.) + #use a ` because there is a space in consumer items
+    theme_few() + #codes after this line is cosmetic
+  scale_fill_hcl(palette = 'RdBu') +
+  theme(panel.spacing.y=unit(0, "lines"), strip.text.y = element_text(
+    size = 5, angle = 0, hjust = 0),
+    legend.position = 'none',
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size=7),
+    axis.title.y = element_blank(),
+    axis.title.x = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.border = element_blank()
+    ) +
+    scale_x_date(expand=c(0,0), date_breaks = "6 month", date_labels = "%b%y") +
+  ggtitle('Average Retail Prices of Selected Consumer Items (Jan 2018 to Dec 2022)')
+
+```
+
+```{r}
+#| code-fold: true
+
+averp %>% 
+  filter(Date >= "2018-01-01") %>% #this line filters specific dates of interest
+  ggplot() + #calls ggplot, necessary since the horizon plot is an extension of ggplot
+  geom_horizon(aes(x = Date, y=Values), 
+               origin = "midpoint", 
+               horizonscale = 6)+ #indicating 6 months interval
+  facet_grid(`Consumer Items`~.) + #use a ` because there is a space in consumer items
+    theme_few() + #codes after this line is cosmetic
+  scale_fill_hcl(palette = 'RdBu') 
+```
+
