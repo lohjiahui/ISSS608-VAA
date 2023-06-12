@@ -39,28 +39,27 @@ The data used for this exercises will be from Mini Challenge 3 of the VAST Chall
 
 ### 2.1 Loading the data
 
-First, the necessary packages are installed and loaded onto RStudio using p_load() from the pacman library.
+First, the necessary packages are installed and loaded onto RStudio using `p_load()` from the `pacman` library.
 
 ```{r}
 #| code-fold: true
 
-pacman::p_load(jsonlite, tidygraph, ggraph, visNetwork, graphlayouts, ggforce, tidytext, tidyverse, skimr, stringr)
+pacman::p_load(jsonlite, tidygraph, ggplot2, ggraph, visNetwork, graphlayouts, ggforce, tidytext, tidyverse, skimr, stringr, igraph, plotly, knitr,ggtext, kableExtra)
 ```
 
 ### 2.2 Importing the data
 
-Similar to mini-challenge 2, the data files provided for the challenge are in json format. As such, the dataset will be imported using jsonlite::fromJSON and saved as 'MC3'.
+Similar to mini-challenge 2, the data files provided for the challenge are in json format. As such, the dataset will be imported using `jsonlite::fromJSON` and saved as 'MC3'.
 
 ```{r}
 #| code-fold: true
 mc3 <- fromJSON("/Users/jiahuiloh/lohjiahui/ISSS608-VAA/Take-Home_Exercises/Take-Home_Ex03/data/MC3.json")
 ```
 
-Using the glimpse() function, we observe that the data is not in the usual dataframe format, but in a list format instead. The final output if hidden due to output length. Using the image below however, we can see that list format. Keeping this format would make subsequent data wrangling tasks challenging. As such, we will need to transform the data format.
+Using the `glimpse()` function, we observe that the data is not in the usual dataframe format, but in a list format instead. The final output if hidden due to output length. Using the image below however, we can see that list format. Keeping this format would make subsequent data wrangling tasks challenging. As such, we will need to transform the data format.
 
 ```{r}
 #| eval: false
-
 glimpse(mc3)
 ```
 
@@ -68,7 +67,7 @@ glimpse(mc3)
 
 #### 2.2.1 Transforming links file to tibble
 
-The code chunk below will be used to extract the links data.frame from mc3 and save it as a tibble dataframe called edges.
+The code chunk below will be used to extract the links dataframe from 'mc3' and save it as a tibble dataframe called 'edges'.
 
 ```{r}
 #| code-fold: true
@@ -94,7 +93,7 @@ edges <- as_tibble(mc3$links) %>%
 
 #### 2.2.2 Transforming nodes file to tibble
 
-A similar approach was also taken the transform the nodes file, to convert it to tibble. The additional function select() below is used to re-organise the fields in the dataset so that it is more suitable for analyses.
+A similar approach was also taken the transform the nodes file, to convert it to tibble. The additional function `select()` below is used to re-organise the fields in the dataset so that it is more suitable for analyses.
 
 ```{r}
 #| code-fold: true
@@ -107,13 +106,15 @@ nodes <- as_tibble(mc3$nodes) %>%
   select(id, country, type, revenue_omu, product_services)
 ```
 
-## 3 Data Exploration and Cleaning
+## 3 Data Exploration and Wrangling
 
 ### 3.1 Edge dataframe
 
 #### 3.1.1 Missing data and data structure
 
-Using `skim()` of skimr package, we display the summary statistics of the nodes tibble data frame. Aside from the revenue_omu variable which noted 21,515 missing data points, the rest of the attributes appeared complete.
+Using `skim()` of skimr package, we display the summary statistics of the edges tibble data frame. No missing data was observed. Notably, the calculated variable was 1 across all rows.
+
+Oddly, the maximum length of a source node was exceptionally long. This calls for some investigation.
 
 ```{r}
 #| code-fold: true
@@ -121,15 +122,19 @@ skim(edges)
 ```
 
 ::: callout-note
-Looking at the summary above, a few observations can be made:
+But first, let's also take a closer look at the edges data (see table below) to understand the relationships or associations we are studying here. Unlike in take-home assignment 2, where each row represented a transaction or shipment between firms, each link here ties a company with relevant individuals. These individuals can be beneficial owners of the company, or just a company contact person.
 
-\- No missing data was observed
-\- Oddly, the maximum length of a source node was exceptionally long. This calls for some investigation. 
+It may therefore be useful to identify influential individuals in the system.
 :::
 
-#### 3.1.2 Investigating source nodes in edges file
+```{r}
+#| code-fold: true
+head(edges)
+```
 
-While we have broken down the mc3 data from it's original list format, it seems like some of the companies are still concantenated/grouped. Eye-balling the list, we see that these groups can be a list of repeated companies, or a mix of companies. For cleanere analyses, we will need to break this list down to individual source companies. 
+#### 3.1.2 Investigating long length of source nodes in edges file
+
+While we have broken down the 'mc3' data from it's original list format, it seems like some of the companies are still concatenated/grouped. Eye-balling the list, we see that these groups can be a list of repeated companies, or a mix of companies. For cleaner analyses, we will need to break this list down to individual source companies.
 
 ```{r}
 #| code-fold: true
@@ -142,6 +147,7 @@ top_sources <- edges %>%
 # Printing the top sources
 print(top_sources)
 ```
+
 ::: {.callout-note icon="false"}
 ## Things to learn from the code chunk above
 
@@ -151,32 +157,59 @@ print(top_sources)
 -   Finally, we arrange the results in descending order of the "node_length" using arrange().
 :::
 
-The code chunk below uses the seperate_rows() function, and split rows using ',' as a seperator. Redundant characters like 'c' or '()' will also be removed. The rows are then re-grouped again. The cleaned dataframe is saved as 'edges_new'. 
+The code chunk below does the following:
+
+-   Using `filter()` and `startsWith()`, we filter out rows with source values than begins with 'c(' as this points us to firms that are still grouped together.
+
+-   Next, using the `separate_rows()` function, and split rows using ',' as a seperator, redundant characters like 'c' or '()' will also be removed.
+
+-   We then remove the concatenated rows from the original 'edges' dataframe, and add the new rows with seperated source companies in each row using the `anti_join()` and `bind_rows()` function, respectively.
+
+-   Lastly, the rows are then grouped using `group_by()` by source and target. The new dataframe is saved under 'edges_grouped'.
 
 ```{r}
 #| code-fold: true
 
-edges_new <- edges %>%
+#extract rows with grouped source
+filtered_edges <- edges %>%
+  filter(startsWith(source, "c("))
+
+#split the group up to individual companies
+filtered_edges_seperated <- filtered_edges %>%
   separate_rows(source, sep = ", ") %>%
   mutate(source = gsub('^c\\(|"|\\)$', '', source))
 
+# remove rows with grouped sources
+edges_new <- edges %>%
+  anti_join(filtered_edges)
+
+# add rows where sources are seperated
 edges_new <- edges_new %>%
+  bind_rows(edges_new, filtered_edges_seperated)
+
+#group by source and target
+edges_grouped <- edges_new %>%
   group_by(source, target, type) %>%
   summarise(weight = n()) %>%
-  filter(source != target) %>%
   filter(weight > 1) %>%
   ungroup() 
 ```
 
-In the code chunk below, datatable() of DT package is used to display edges_new tibble data frame as an interactive table on the html document. When we toggle wit the weight variable, we now see individuals like Cole Allen being associated multiple times with Niger River Delta S.p.A.
+Using the `skim()` function to review the data again, we see that the maximum length of the source node has dropped significantly down to 64, a reasonable number. Looking a the weight value, we also see a small proportion of repeated association, the maximum going up to 20.
 
-:::callout-note
-As it is too early to decide if the replicated rows in the edges dataset suggest suspicious associated, or simply an error in the data, we will not remove the replicated rows for now. 
+```{r}
+skim(edges_grouped)
+```
+
+In the code chunk below, `datatable()` of DT package is used to display edges_grouped tibble data frame as an interactive table on the html document. When we toggle wit the weight variable, we now see individuals like Cole Allen being associated multiple times with Niger River Delta S.p.A.
+
+::: callout-note
+As it is too early to decide if the replicated rows in the edges dataset suggest suspicious associated, or simply an error in the data, we will keep the weights, for now.
 :::
 
 ```{r}
 #| code-fold: true
-DT::datatable(edges_new)
+DT::datatable(edges_grouped)
 ```
 
 ### 3.2 Nodes dataframe
@@ -206,14 +239,111 @@ num_removed_rows <- nrow(nodes) - nrow(nodes_distinct)
 cat("Number of duplicated rows in nodes:", num_removed_rows, "\n")
 ```
 
-#### 3.2.2 Understand product_services
+#### 3.2.2 Align nodes with edges
+
+Since the edges file is cleaned, we will use it as an anchor, to align the nodes in both dataframes accordingly. The code chunk below does the following:
+
+-   First, the `setdiff()` function is used to identify nodes that are in the 'source' column of 'edges_grouped', but not in the nodes dataframe.
+-   Using `tibble()`, we then fill up the respective missing data. Specifically, since the source column mainly consisted of company names, the type for this column would be 'Company' for all.
+-   Next, a similar approach is taken for the 'target' column. The only difference being the 'type' for these values would be taken from the 'type' column in 'edges_grouped'.
+-   Once both data frames are ready, the then look to the original nodes dataframe, to first remove any nodes that are currently in, but don't appear in either the 'source' or 'target' columns in edges.
+-   All 3 dataframes, are then merged using `bind_rows()`.
+
+The final dataframes **'nodes_aligned'** and **'edges_grouped'**, has 63,043 and 23,665 observations, respectively.
+
+```{r}
+#| code-fold: true
+# Identify missing values in the 'source' column of 'edges_grouped'
+missing_source <- setdiff(edges_grouped$source, nodes$id)
+
+# Create a new dataframe for the missing 'source' values
+missing_source_df <- tibble(
+  id = missing_source,
+  country = rep(NA_character_, length(missing_source)),
+  type = rep("Company", length(missing_source)),
+  revenue_omu = rep(NA_real_, length(missing_source)),
+  product_services = rep(NA_character_, length(missing_source))
+)
+
+# Identify missing values in the 'target' column of 'edges_grouped'
+missing_target <- setdiff(edges_grouped$target, nodes$id)
+
+# Create a new dataframe for the missing 'target' values
+missing_target_df <- tibble(
+  id = missing_target,
+  country = rep(NA_character_, length(missing_target)),
+  type = edges_grouped$type[match(missing_target, edges_grouped$target)],
+  revenue_omu = rep(NA_real_, length(missing_target)),
+  product_services = rep(NA_character_, length(missing_target))
+)
+
+# Filter the 'nodes' dataframe to keep only the 'id' values present in 'edges_grouped'
+filtered_nodes <- nodes %>%
+  filter(id %in% c(edges_grouped$source, edges_grouped$target))
+
+# Combine the missing source and target dataframes with the nodes dataframe
+nodes_aligned <- bind_rows(filtered_nodes, missing_source_df, missing_target_df)
+```
+
+The code chunk below does a quick check to see if the nodes in both updated list matches. And we have the green light!
+
+```{r}
+#| code-fold: true
+
+# Get the unique nodes in the 'id' column of the 'nodes_filtered' dataframe
+unique_nodes_nodes <- unique(nodes_aligned$id)
+
+# Get the unique nodes in the 'source' and 'target' columns of the 'edges_new' dataframe
+unique_nodes_edges <- unique(c(edges_grouped$source, edges_grouped$target))
+
+# Check if the list of nodes is the same
+nodes_match <- all(unique_nodes_nodes %in% unique_nodes_edges) & all(unique_nodes_edges %in% unique_nodes_nodes)
+
+# Printing the result
+print(nodes_match)
+
+```
+
+#### 3.2.3 Process to ensure nodes are distinct
+
+Post alignment, after a quick review of the nodes dataframe, it is also observed that the node identifiers are not unique. These nodes however, are not duplicates, as they may be companies with the same name from different origin countries, or belonging to a different produce or services group. We'll need to clean this up for subsequent network analyses.
+
+The code chunk below will group the rows by unique 'id'. Specifically, for the variable type, each additional value will be recorded in a new column e.g. "type_2". For the remaining variables, values will concatenated within the original columns, and seperated by a comma. Odd values like character(0), and Unknown will also be changed to 'NA'.
+
+```{r}
+#| code-fold: true
+
+# Convert 'revenue_omu' to character
+nodes_aligned <- nodes_aligned %>%
+  mutate(revenue_omu = as.character(revenue_omu))
+
+# Convert character(0) and unknown to NA
+nodes_aligned <- nodes_aligned %>%
+  mutate(product_services = ifelse(product_services %in% c("character(0)", "Unknown"), NA, product_services))
+
+# Group the rows by 'id' and perform the merging and counting
+nodes_grouped <- nodes_aligned %>%
+  group_by(id) %>%
+  summarize(
+    count = n(),
+    type_1 = ifelse(n() >= 1, type[1], NA),
+    type_2 = ifelse(n() >= 2, type[2], NA),
+    type_3 = ifelse(n() >= 3, type[3], NA),
+    country = ifelse(n() == 1, country, paste(unique(country), collapse = ", ")),
+    revenue_omu = ifelse(n() == 1, revenue_omu, paste(unique(revenue_omu), collapse = ", ")),
+    product_services = ifelse(n() == 1, product_services, paste(unique(product_services), collapse = ", "))
+  )
+
+```
+
+#### 3.2.4 Understand product_services
 
 Looking at the summary table above, there are 3,244 unique categories of products and services. However, it is not clear if all categories are related to the fishing industry. Let's take a closer look.
 
 ```{r}
 #| code-fold: true
 
-top_categories <- nodes_distinct %>%
+top_categories <- nodes_grouped %>%
   count(product_services, sort = TRUE) %>%
   top_n(10)
 
@@ -226,35 +356,17 @@ print(top_categories)
 ```
 
 ::: callout-note
-Looking at the table above, a few observations can be made:
+Looking at the table above, we see that even in the top 10, there were categories that were non-fishing related e.g., Footwear.
 
-\- A larger majority of nodes had 'character(0)' or unknown as their given categories. A quick review of the data found that nodes that were beneficial owners or company contacts were categorised under 'character(0)'. Since these inidividuals are not companies, it is sensible that they not be categorised into one. As such we will rename these as 'NA'. 
-
-\- Even in the top 10, there were categories that were non-fishing related e.g., Footwear. To narrow now the relevant nodes, we will need to identify categories that are fishing related.
+To narrow now the relevant nodes, we will need to identify categories that are fishing related.
 :::
 
-The code chunk below will change all 'character(0)' and 'Unknown' to 'NA'.
+Next, using text analytics, we will attempt to filter out only companies that are likely associated with the fishing industry.
 
 ```{r}
 #| code-fold: true
 
-nodes_distinct <- nodes_distinct %>%
-  mutate(product_services = ifelse(product_services %in% c("character(0)", "Unknown"), NA, product_services))
-```
-
-::: {.callout-note icon="false"}
-## Things to learn from the code chunk above
-
--   The mutate() function allows us to create or modify columns in a data frame.
--   Inside the mutate() function, the ifelse() function is used to conditionally replace the "character(0)" values with NA. If the value of "product_services" is "character(0)", it will be replaced with NA.
-:::
-
-Next, using text analytics, we will attempt to filter out only companies that are likely associated with the fishing industry. 
-
-```{r}
-#| code-fold: true
-
-token_nodes <- nodes_distinct %>%
+token_nodes <- nodes_aligned %>%
   unnest_tokens(word, 
                 product_services)
 
@@ -262,18 +374,19 @@ stopwords_removed <- token_nodes %>%
   anti_join(stop_words)
 ```
 
-The bar chart below helps us to visualise the top 15 token words from the variable 'product_services'. These words can serve as guide, to help us filter out product and service categories that are likely associated with the fishing industry. 
+The bar chart below helps us to visualise the top 15 token words from the variable 'product_services'. These words can serve as guide, to help us filter out product and service categories that are likely associated with the fishing industry.
 
 ```{r}
 #| code-fold: true
 
 stopwords_removed %>%
+  filter(!is.na(word)) %>%  # Exclude NA values
   count(word, sort = TRUE) %>%
   top_n(20) %>%
   mutate(word = reorder(word, n)) %>%
   ggplot(aes(x = word, y = n)) +
   geom_col() +
-  geom_text(aes(label = n), vjust = 0.5, hjust = -0.3, size = 3, color = "black") +  # Add labels on bars
+  geom_text(aes(label = n), vjust = 0.5, hjust = 1.2, size = 3, color = "white") +
   xlab(NULL) +
   coord_flip() +
   labs(x = "Count",
@@ -282,112 +395,812 @@ stopwords_removed %>%
   theme_classic()
 
 ```
-The code chunk below helps us filter out categories based on what we have assessed as useful. For example, words like fish or seafood would be included, but words like adhesives or bags will be excluded. The result is a shorter list of nodes with firms
+
+The code chunk below helps us filter out categories based on what we have assessed as useful. For example, words like fish or seafood would be included, but words like adhesives or bags will be excluded. The result is a shorter list of nodes with firms that are likely directly involved in the fishing industry.
 
 ```{r}
 #| code-fold: true
+#| 
 # List of words to filter by
-words_to_include <- c("fish", "seafood", "frozen", "food", "fresh", "shrimp", "salmon", "tuna", "shellfish", "crabs", "squid", "mollusks", "crustaceans", "lobster", "oysters", "clams", "bass", "trout", "tuna", "sea", "ocean", "shipping", "shipments", "shipment", "pier", "marine", NA)
+words_to_include <- c("fish", "seafood", "fresh", "shrimp", "prawn", "salmon", "tuna", "shellfish", "crabs", "squid", "mollusks", "crustaceans", "lobster", "oysters", "clams", "bass", "trout", "tuna", "cod", "shark", "chum", "sea", "ocean", "aquatic", "shipping", "shipments", "shipments", "pier")
 
-nodes_final <- nodes_distinct %>%
-  filter(str_detect(product_services, paste(words_to_include, collapse = "|", sep = "")) | is.na(product_services))
+nodes_grouped$product_services <- tolower(nodes_grouped$product_services)
 
-print(nodes_final)
+nodes_grouped <- nodes_grouped %>%
+  mutate(category = case_when(
+    !is.na(product_services) & grepl(paste("\\b", words_to_include, "\\b", collapse = "|"), tolower(product_services)) ~ "Fishing Activities",
+    !is.na(product_services) ~ "Non-Fishing Activities",
+    TRUE ~ NA_character_
+  ))
 
 ```
 
 ::: {.callout-note icon="false"}
 ## Things to learn from the code chunk above
 
--   The str_detect() function from the stringr package is applied to the 'product_services' column to check if words in the 'words_to_include' list are present in 'product_services'. 
--   The is.na() function us used to include all 'NA' values
--   the logical OR (|) operator is used to check if either the 'product_services' column contains any of the specified words or if it is NA. 
+-   The `tolower()` function is used to convert all words in the product_services column to lower case
+-   The `grepl()` function is used to check if the 'product_services' column contains any of the words in the 'words_to_include' list, ignoring case sensitivity.
+-   Next the `paste(words_to_include, collapse = "|")` portion of the code is used to create a regular expression pattern that matches any of the words in the list.
+
+If a match is found, the row will be categorized as "Fishing Activities". If 'product_services' is not NA but doesn't match any words in the list, it will be categorized as "Non-Fishing Activities".
 :::
 
-### 3.2.3 Align nodes and edge dataframes 
+### 3.3 Understanding nodes dataframe through visuals
 
-Now, we will need to reconcile the nodes and edges dataframe. Instead of filtering just by matching the 'id' from nodes and 'source' from the edge dataframe, as we are looking to explore odd relationships, we will be doing the following:
+#### 3.3.1 Node type
 
-1. Identify matching 'id' and 'source' companies
-2. Extract all 'target' values associated with these companies. Note that one company can have multiple individuals associated with it.
-3. Also, because an individual can be associated with multiple companies, we will keep all source companies that are linked with the extracted 'target' list in point 2. 
-4. We will then identify the additional source companies, and add them back to the node list. 
+Looking at the pie chart below, we can see that close to half of node types are associated with 'beneficial owners'. This is following by companies at 35% and lastly, company contacts making up the last 19%.
 
-This data set will set as our final data set for analyses. 
+::: panel-tabset
+## Plot
 
 ```{r}
-###Step 1 and 2
+#| echo: false
 
-# Extract target values based on matching source with nodes_final$id
-extracted_targets <- edges_new %>%
-  filter(source %in% nodes_final$id) %>%
-  select(target)
+# Calculate the percentage of each category
+type_props <- nodes_grouped %>%
+  count(type_1) %>%
+  mutate(prop = n / sum(n))
 
-# Filter edges_new to include only the extracted target values
-edges_final <- edges_new %>%
-  filter(target %in% extracted_targets$target)
-
-# Find the list of values in 'target' that were not extracted
-not_extracted_targets <- edges_new %>%
-  filter(!target %in% extracted_targets$target) %>%
-  distinct(target)
-
-# Remove not_extracted_targets from the 'id' column in nodes_final
-nodes_final <- nodes_final %>%
-  filter(!id %in% not_extracted_targets$target)
-
-###Step 3 and 4
-# Find additional source values not in nodes_final$id
-additional_sources <- edges_final %>%
-  filter(!source %in% nodes_final$id) %>%
-  distinct(source)
-
-# Extract the additional nodes from the nodes_distinct dataframe
-additional_nodes <- nodes %>%
-  filter(id %in% additional_sources$source)
-
-# Add the additional nodes to the nodes_final dataframe
-nodes_final <- rbind(nodes_final, additional_nodes)
+ggplot(type_props, aes(x = "", y = prop, fill = type_1)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y", start = 0, direction = -1) +
+  scale_fill_manual(values = c("#8dd3c7", "#ffffb3", "#bebada")) +
+  theme_void() +
+  theme(legend.position = "right",
+        plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+        legend.title = element_text(size = 10, face = "bold"),
+        legend.text = element_text(size = 8)) +
+  labs(fill = "Types") +
+  geom_text(aes(label = paste0(round(prop*100), "%")), position = position_stack(vjust = 0.5), size = 3) +
+  ggtitle("Proportion of Node Types")
 
 ```
 
+## Data
 
 ```{r}
-# Get the unique nodes in the 'id' column of the 'nodes_filtered' dataframe
-unique_nodes_nodes <- unique(nodes_final$id)
+#| eval: true
+#| output: false
 
-# Get the unique nodes in the 'source' and 'target' columns of the 'edges_new' dataframe
-unique_nodes_edges <- unique(c(edges_final$source, edges_final$target))
+# Calculate the percentage of each category
+type_props <- nodes_grouped %>%
+  count(type_1) %>%
+  mutate(prop = n / sum(n))
 
-# Check if the list of nodes is the same
-nodes_match <- all(unique_nodes_nodes %in% unique_nodes_edges) & all(unique_nodes_edges %in% unique_nodes_nodes)
+ggplot(type_props, aes(x = "", y = prop, fill = type_1)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y", start = 0, direction = -1) +
+  scale_fill_manual(values = c("#8dd3c7", "#ffffb3", "#bebada")) +
+  theme_void() +
+  theme(legend.position = "right",
+        plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+        legend.title = element_text(size = 10, face = "bold"),
+        legend.text = element_text(size = 8)) +
+  labs(fill = "Types") +
+  geom_text(aes(label = paste0(round(prop*100), "%")), position = position_stack(vjust = 0.5), size = 3) +
+  ggtitle("Proportion of Node Types")
 
-# Printing the result
-print(nodes_match)
 ```
+:::
 
+#### 3.3.1 Industry type
+
+Zooming only into nodes that were companies, we see that 410 were associated with the fishing industry, while the rest were either unlikely to be associated, or unknown.
+
+::: panel-tabset
+## Plot
 
 ```{r}
-# Find nodes in 'unique_nodes_nodes' that are not present in 'unique_nodes_edges'
-missing_nodes_in_edges <- setdiff(unique_nodes_nodes, unique_nodes_edges)
+#| echo: false
 
-# Find nodes in 'unique_nodes_edges' that are not present in 'unique_nodes_nodes'
-missing_nodes_in_nodes <- setdiff(unique_nodes_edges, unique_nodes_nodes)
+# Filter rows where 'type_1' is 'Company'
+filtered_data <- nodes_grouped %>%
+  filter(type_1 == "Company")
 
-# Print the missing nodes in 'edges_final' and 'nodes_final'
-print(missing_nodes_in_edges)
-#print(missing_nodes_in_nodes)
+# Calculate the count and percentage for each category
+category_props <- filtered_data %>%
+  count(category) %>%
+  mutate(prop = n / sum(n))
+
+# Create the bar chart
+ggplot(category_props, aes(x = category, y = n, fill = category)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste(n, "(", scales::percent(prop), ")")),
+            position = position_stack(vjust = 0.7),
+            size = 3, color = "black") +
+  labs(x = "Industry Category", y = "Count", title = "Industry Categories among Companies") +
+  scale_fill_manual(values = c("Fishing Activities" = "#cbd5e8", 
+                               "Non-Fishing Activities" = "#fdcdac",
+                               "NA" = "grey91")) +
+  theme_classic() +
+  theme(legend.position = "bottom",
+        plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+        legend.title = element_text(size = 10, face = "bold"),
+        legend.text = element_text(size = 8),
+        legend.box = "horizontal") +
+  labs(fill = "Category") 
 
 ```
 
+## Data
 
 ```{r}
-# Filter edges_new based on matching 'source' and 'target' with 'id' in nodes_final
-aligned_edges <- edges_new %>%
-  filter(source %in% nodes_final$id, target %in% nodes_final$id)
+#| eval: true
+#| output: false
 
-# Update nodes_final to include only the relevant nodes based on aligned_edges
-aligned_nodes <- nodes_final %>%
-  filter(id %in% unique(c(aligned_edges$source, aligned_edges$target)))
+# Filter rows where 'type_1' is 'Company'
+filtered_data <- nodes_grouped %>%
+  filter(type_1 == "Company")
+
+# Calculate the count and percentage for each category
+category_props <- filtered_data %>%
+  count(category) %>%
+  mutate(prop = n / sum(n))
+
+# Create the bar chart
+ggplot(category_props, aes(x = category, y = n, fill = category)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste(n, "(", scales::percent(prop), ")")),
+            position = position_stack(vjust = 0.7),
+            size = 3, color = "black") +
+  labs(x = "Industry Category", y = "Count", title = "Industry Categories among Companies") +
+  scale_fill_manual(values = c("Fishing Activities" = "#cbd5e8", 
+                               "Non-Fishing Activities" = "#fdcdac",
+                               "NA" = "grey91")) +
+  theme_classic() +
+  theme(legend.position = "bottom",
+        plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+        legend.title = element_text(size = 10, face = "bold"),
+        legend.text = element_text(size = 8),
+        legend.box = "horizontal") +
+  labs(fill = "Category") 
+
+```
+:::
+
+::: callout-note
+From the bar chart above, it is observed that the proportion of companies that are associated with the fishing industry is actually just a small proportion of the data. In fact, the data collected is fairly incomplete, with a large proportion indicating product_services as 'Unknown', which were recoded to 'NA'.
+
+As such, the narrow the scope down to the topic of interest, we will filter for firms that are most likely to be associated with the fishing industry i.e., category - Fishing Activities.
+:::
+
+The code chunk below will help us extract the necessary data points. Specifically, the following steps are taken:
+
+-   Using the `filter()` function, we extract the 'ids' from rows that were categorised under 'Fishing Activities'
+-   Next, we find the respective rows from the edges file where the 'source' matches the extracted list if 'ids'
+-   Lastly, we filter the 'nodes_grouped' dataframe to only include values that are in the new 'source' and 'target' list
+
+```{r}
+#| code-fold: true
+
+# Extract 'id' where the category is 'Fishing Activities' from the 'nodes_grouped' 
+fishing_ids <- nodes_grouped %>%
+  filter(category == "Fishing Activities") %>%
+  pull(id)
+
+#Filter the 'edges_grouped' dataframe based on the extracted 'id' list from step 1:
+edges_fishing <- edges_grouped %>%
+  filter(source %in% fishing_ids)
+
+#Align with nodes dataframe
+nodes_fishing <- nodes_grouped %>%
+  filter(id %in% c(edges_fishing$source, edges_fishing$target))
 ```
 
+## 5 Visualising the Network for Fishing related entities
+
+### 5.1 Network Overview
+
+To get a better sense of the network among different entities, a static network graph is used. Centrality scores for each node is calculated using the `centrality_betweenness()` function and reflected in the size of the node, while the entity types are coloured differently as well.
+
+::: callout-note
+From the static graph, we can observe the following:
+
+-   A few nodes with high betweenness can be see at the centre of the graph. These are likely nodes involved in larger networks and we should take a closer look at these.
+
+-   The nodes look fragmented. In fact, in the static chart, it seems like there are a lot of standalone nodes. We will use an interactive chart to take a closer look at these peripheral nodes.
+
+From the interactive graph, we can better explore the data:
+
+-   A quick interaction with the peripheral nodes, we will see that these are small clusters. i.e., companies that are associated with one individual, and the individual has no other links to any other companies.
+
+-   These nodes likely represent small businesses in the industry.
+:::
+
+This is not surprising, as it suggests that there are a large proportion of businesses where its beneficial owners or contacts are only associated with them. It may however, be interesting to take a closer look at the small and large clusters, separately.
+
+::: panel-tabset
+## Static
+
+```{r}
+#| echo: false
+
+fish_graph <- tbl_graph(nodes = nodes_fishing,
+                           edges = edges_fishing, 
+                           directed = FALSE)
+
+g <- fish_graph %>%
+  mutate(betweenness_centrality = centrality_betweenness()) %>%
+  ggraph(layout = "nicely") +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(colour = type_1,
+                      size = betweenness_centrality)) +
+  theme_graph() +
+  labs(colour = "Node Type",
+       size = "Betweenness Centrality") 
+
+g
+```
+
+## Code
+
+```{r}
+#| eval: true
+#| output: false
+fish_graph <- tbl_graph(nodes = nodes_fishing,
+                           edges = edges_fishing, 
+                           directed = FALSE)
+
+g <- fish_graph %>%
+  mutate(betweenness_centrality = centrality_betweenness()) %>%
+  ggraph(layout = "nicely") +
+  scale_edge_width(range = c(0.1, 5)) +
+  geom_node_point(aes(colour = type_1,
+                      size = betweenness_centrality)) +
+  theme_graph() +
+  labs(colour = "Node Type",
+       size = "Betweenness Centrality") 
+
+g
+```
+
+## Interactive
+
+```{r}
+#| echo: false
+edges_fishing_i <- edges_fishing %>%
+  rename(from = source, to = target)
+
+nodes_fishing <- nodes_fishing %>%
+  rename(group = type_1) 
+
+# Create a visNetwork object with nodes and edges
+visNetwork(nodes = nodes_fishing, edges = edges_fishing_i) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)
+
+```
+
+## Code
+
+```{r}
+#| eval: true
+#| output: false
+nodes_fishing <- nodes_fishing %>%
+  rename(group = group) 
+
+# Create a visNetwork object with nodes and edges
+visNetwork(nodes = nodes_fishing, edges = edges_fishing_i) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)
+
+```
+:::
+
+### 5.1 Reviewing Networks by Diameter
+
+#### 5.1.1 Count and Size distribution
+
+Network diameter refers to the shortest distance between the two modes distant nodes in network.
+
+Using the `components()` function in igraph, we see that 391 sub-graphs make up the whole network. The number of nodes in each sub-graph were also counted. Both set of values were added as new variables in the 'nodes_fishing' dataframe.
+
+Looking at the 2 histograms below, we see that majority of the nodes being to fairly small sub-networks (2 nodes were the mode), and of diameter less than 4.
+
+```{r}
+#| code-fold: true
+
+# Create an igraph object from the data
+graph <- graph_from_data_frame(edges_fishing_i, vertices = nodes_fishing)
+
+# Get the number of sub-networks (connected components)
+num_subnetworks <- components(graph)$no
+
+# Print the number of sub-networks
+cat("Number of sub-networks:", num_subnetworks, "\n")
+
+# Find the network diameter for each subgraph
+diameters <- sapply(1:num_subnetworks, function(m) {
+  subgraph <- subgraph(graph, components(graph)$membership == m)
+  max_distance <- max(distances(subgraph))
+  return(max_distance)
+})
+
+# Add the network diameter to the nodes_fishing data frame
+nodes_fishing$network_diameter <- diameters[components(graph)$membership]
+```
+
+::: panel-tabset
+## Number of Nodes
+
+```{r}
+#| echo: false
+# Get the membership of each node in the sub-networks
+node_membership <- components(graph)$membership
+
+# Count the number of nodes in each sub-network
+node_counts <- table(node_membership)
+
+# Add a new column 'num_nodes' to the 'nodes_fishing' dataframe
+nodes_fishing$num_nodes <- node_counts[node_membership]
+
+# Create a histogram using 'ggplot2'
+histogram <- ggplot(nodes_fishing, aes(x = num_nodes)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  labs(x = "Number of Nodes", y = "Count", title = "Distribution of Sub-Networks by Number of Nodes") +
+  theme_classic()
+
+# Convert the histogram to a plotly object with tooltips
+plotly_histogram <- ggplotly(histogram, tooltip = c("y", "x"))
+
+# Display the interactive plot
+plotly_histogram
+```
+
+## Code
+
+```{r}
+#| eval: true
+#| output: false
+# Get the membership of each node in the sub-networks
+node_membership <- components(graph)$membership
+
+# Count the number of nodes in each sub-network
+node_counts <- table(node_membership)
+
+# Add a new column 'num_nodes' to the 'nodes_fishing' dataframe
+nodes_fishing$num_nodes <- node_counts[node_membership]
+
+# Create a histogram using 'ggplot2'
+histogram <- ggplot(nodes_fishing, aes(x = num_nodes)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "black") +
+  labs(x = "Number of Nodes", y = "Count", title = "Distribution of Number of Nodes within sub-graph") +
+  theme_classic()
+
+# Convert the histogram to a plotly object with tooltips
+plotly_histogram <- ggplotly(histogram, tooltip = c("y", "x"))
+
+# Display the interactive plot
+plotly_histogram
+```
+
+## Diameter
+
+```{r}
+#| echo: false
+# Find the network diameter for each subgraph
+diameters <- sapply(1:num_subnetworks, function(m) {
+  subgraph <- subgraph(graph, components(graph)$membership == m)
+  max_distance <- max(distances(subgraph))
+  return(max_distance)
+})
+
+# Add the network diameter to the nodes_fishing data frame
+nodes_fishing$network_diameter <- diameters[components(graph)$membership]
+
+# Create a histogram of network diameters
+histogram <- ggplot(data.frame(diameter = diameters), aes(x = diameter)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "black") +
+  labs(x = "Network Diameter", y = "Frequency", title = "Distribution of Sub-Networks by Diameters") +
+  theme_classic()
+
+# Convert the histogram to a plotly object with tooltips
+plotly_histogram <- ggplotly(histogram, tooltip = c("y", "x"))
+
+# Display the interactive plot
+plotly_histogram
+```
+
+## Code
+
+```{r}
+#| eval: true
+#| output: false
+# Find the network diameter for each subgraph
+diameters <- sapply(1:num_subnetworks, function(m) {
+  subgraph <- subgraph(graph, components(graph)$membership == m)
+  max_distance <- max(distances(subgraph))
+  return(max_distance)
+})
+
+# Add the network diameter to the nodes_fishing data frame
+nodes_fishing$network_diameter <- diameters[components(graph)$membership]
+
+# Create a histogram of network diameters
+histogram <- ggplot(data.frame(diameter = diameters), aes(x = diameter)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "black") +
+  labs(x = "Network Diameter", y = "Frequency", title = "Distribution of Sub-Networks by Diameters") +
+  theme_classic()
+
+# Convert the histogram to a plotly object with tooltips
+plotly_histogram <- ggplotly(histogram, tooltip = c("y", "x"))
+
+# Display the interactive plot
+plotly_histogram
+```
+:::
+
+### 5.1.2 Revenue
+
+Since a large majority of the sub-graphs belong to very small networks, it may not be efficient to study their patterns in the form of a network graph. As such, we will use other visualisation tools to understand the characteristics.
+
+The code chunk below performs the following: - When the data were first concatenated, values in the 'revenue_omu 'column were formatted as character. This format however, is not suitable for analysis. As such, we will convert these values to numeric, using the `as.numeric()` function. - We then filter out for companies with revenue that is not 0, and calculate the summary statistics for companies with reported revenue, by network size (i.e. number of nodes). - Using the `kable()` function from `knitr`, we then format the table so that the data is presented clearly.
+
+::: panel-tabset
+## Revenue Summary
+
+```{r}
+#| echo: false
+
+# Convert 'revenue_omu' to character
+nodes_fishing$revenue_calculated <- as.character(nodes_fishing$revenue_omu)
+
+# Replace NA values with "0"
+nodes_fishing$revenue_calculated[is.na(nodes_fishing$revenue_calculated)] <- "0"
+
+# Sum the values for rows with multiple values
+nodes_fishing$revenue_calculated <- sapply(nodes_fishing$revenue_calculated, function(x) {
+  values <- unlist(strsplit(x, ", "))
+  values_numeric <- as.numeric(values[values != "NA"])
+  sum(values_numeric, na.rm = TRUE)
+})
+
+# Filter the rows where id is "Company" and revenue_calculated is not 0
+filtered_fishcompany <- subset(nodes_fishing, group == "Company" & revenue_calculated != 0)
+
+# Calculate summary statistics by number of nodes
+summary_table <- filtered_fishcompany %>%
+  group_by(num_nodes) %>%
+  summarise(
+    Count = n(),
+    Mean = mean(revenue_calculated),
+    Median = median(revenue_calculated),
+    Min = min(revenue_calculated),
+    Max = max(revenue_calculated)
+  )
+
+# Print the summary table using kable
+kable(summary_table, caption = "Summary Statistics of Revenue by Network Size") %>%
+  kable_styling(bootstrap_options = "striped")
+```
+
+## Code
+
+```{r}
+#| eval: true
+#| output: false
+
+# Convert 'revenue_omu' to character
+nodes_fishing$revenue_calculated <- as.character(nodes_fishing$revenue_omu)
+
+# Replace NA values with "0"
+nodes_fishing$revenue_calculated[is.na(nodes_fishing$revenue_calculated)] <- "0"
+
+# Sum the values for rows with multiple values
+nodes_fishing$revenue_calculated <- sapply(nodes_fishing$revenue_calculated, function(x) {
+  values <- unlist(strsplit(x, ", "))
+  values_numeric <- as.numeric(values[values != "NA"])
+  sum(values_numeric, na.rm = TRUE)
+})
+
+# Filter the rows where id is "Company" and revenue_calculated is not 0
+filtered_fishcompany <- subset(nodes_fishing, group == "Company" & revenue_calculated != 0)
+
+# Calculate summary statistics by number of nodes
+summary_table <- filtered_fishcompany %>%
+  group_by(num_nodes) %>%
+  summarise(
+    Count = n(),
+    Mean = mean(revenue_calculated),
+    Median = median(revenue_calculated),
+    Min = min(revenue_calculated),
+    Max = max(revenue_calculated)
+  )
+
+# Print the summary table using kable
+kable(summary_table, caption = "Summary Statistics of Revenue by Network Size") %>%
+  kable_styling(bootstrap_options = "striped")
+```
+:::
+
+Using the scatterplot below, we are able to identify companies with exceptionally high revenues. In particular, firms like Morgan Group, Baker and Sons and Jones Group, stand out due to their lean operations (i.e. few beneficial owners), and high returns.
+
+```{r}
+#| code-fold: true
+
+# Filter the rows where id is "Company" and revenue_calculated is not 0
+filtered_fishcompany <- subset(nodes_fishing, group == "Company" & revenue_calculated != 0)
+
+# Create the scatter plot
+scatterplot <- ggplot(filtered_fishcompany, aes(x = num_nodes, y = revenue_calculated, text = paste("ID: ", id, "<br>Revenue: ", revenue_calculated))) +
+  geom_point() +
+  labs(x = "Network Size", y = "Revenue", title = "Scatter Plot of Revenue by Network Size") +
+  theme_classic()
+
+# Convert the scatter plot to a plotly object
+plotly_scatterplot <- ggplotly(scatterplot, tooltip = "text")
+
+# Display the plotly object
+plotly_scatterplot
+
+```
+
+::: {.callout-note appearance="simple"}
+## Insight
+
+While we cannot assume illegal activities, it may be wise for FishEye to take a closer look at these businesses to understand how they keep operations so lean and yet yield such high returns. Specifically, they can start with the 3 identified companies first.
+
+A good way to start may be to review the company information, to see if anything stands out. For example, after reviewing the company information for Morgan Group, we see the the high revenue is actually tied to the beneficial owner, and not the company itself.
+:::
+
+```{r}
+#| code-fold: true
+
+# Creating a vector of the desired rows to extract
+desired_rows <- c("Morgan Group")
+
+# Extracting the desired rows and columns
+extracted_data_congo <- nodes_fishing %>%
+  filter(id %in% desired_rows) %>%
+  select(ID = id, `Node Type 1` = group, `Node Type 2` = type_2, `Node Type 3` = type_3,  `Revenue` = revenue_omu)
+
+# Printing the extracted data as a table using kable
+kable(extracted_data_congo, format = "html", caption = "Company Information")
+```
+
+### 5.2 Inspecting larget sub-networks
+
+Aside from looking at small companies with large earnings, we will also look at the flip side i.e., exceptionally large networks, to take a closer look at their operations. From the scatterplot above, the companies with the top 3 highest number of nodes in their networks were:
+
+-   Congo Rapids Ltd Corperation
+-   BlueWater Bistro GmbH Industrial
+-   Aqua Aura SE Marine Life
+
+::: callout-note
+Using the interactive network graph a quick search for BlueWater Bistro will reveal that the node shares the same sub-network as Aqua Aura SE Marine Life. As such, we will review both nodes, and their respective networks together.
+:::
+
+The code chunk below will extract the ego-networks of all 3 nodes. Specifically:
+
+-   `unique()` function is first used to identify values in the 'to' column that are associated with the respective firms
+-   `subset()` is then used to extract all the relevant rows from the main 'edges_fishing' dataframe.
+-   The same function is also used to extract all the rows from 'nodes_fishing' that appear in the 'from' or 'to' column, to ensure that both dataframes are aligned.
+
+```{r}
+#| code-fold: true
+
+### Congo Rapids Ltd Corperation
+
+# Identify values in the 'to' column that have 'Congo Rapids Ltd. Corporation' in the source column
+Congo_to <- unique(edges_fishing_i$to[edges_fishing_i$from == 'Congo Rapids   Ltd. Corporation'])
+
+# Extract all rows from edges_fishing where the names appear in the 'Congo_to' list
+congo_edges <- subset(edges_fishing_i, to %in% Congo_to)
+
+# Extract all rows from nodes_fishing that appear in the 'from' or 'to' column in 'congo_edges'
+congo_nodes <- subset(nodes_fishing, id %in% c(congo_edges$from, congo_edges$to))
+
+### BlueWater Bistro GmbH Industrial
+
+# Identify values in the 'to' column that have 'BlueWater Bistro GmbH Industrial' or 'Aqua Aura SE Marine life' in the source column
+bluewater_aqua_to <- unique(edges_fishing_i$to[edges_fishing_i$from %in% c('BlueWater Bistro GmbH Industrial', 'Aqua Aura SE Marine life')])
+
+
+# Extract all rows from edges_fishing where the names appear in the 'bluewater_to' list
+bluewater_aqua_edges <- subset(edges_fishing_i, to %in% bluewater_aqua_to)
+
+# Extract all rows from nodes_fishing that appear in the 'from' or 'to' column in 'edges_bluewater'
+bluewater_aqua_nodes <- subset(nodes_fishing, id %in% c(bluewater_aqua_edges$from, bluewater_aqua_edges$to))
+
+```
+
+#### 5.2.1 Congo Rapids Ltd Corperation - Ego Network
+
+Looking at the interactive chart below, we see a simple ego-network. In essence, the reason behind Congo's larger than usual network size, in terms of number of nodes, is due to it having many beneficial owners. A closer look at the nodes data, we will also see that Congo Rapids Ltd Corperation actually has 2 lines of business, one fishing-related, and the other one not. As such, it is reasonable for the firm to have many owners. As such, nothing appears fishy, on this front.
+
+```{r}
+#|code-fold: true
+
+# Create a visNetwork object with nodes and edges
+visNetwork(nodes = congo_nodes, edges = congo_edges) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)
+
+```
+
+#### 5.2.1 BlueWater Bistro GmbH Industrial & Aqua Aura SE Marine LifeCongo Rapids Ltd Corperation - Sub-network
+
+Unlike the network graph for Congo Rapids Ltd Corperation, this network subgraph is slightly more interesting. Firstly, we see one individual, James Martinez, serving as a bridge between the two firms, with Aqua Aura being the larger firm between the two.
+
+In fact, if we review the company information, we see the Aqua Aura brings in about 10 times more revenue companies to Bluewater. We also see that Aqua Aura has presence in 9 countries; the 9 countries however, do no overlap with Bluewater, which is associated with Marebak.
+
+::: {.callout-note appearance="simple"}
+## Insight
+
+It is interesting that James Martinez, a beneficial owner from such a large firm, would also be associated with a much smaller firm, and from a totally different country. It may be useful for FishEye to look into such individuals as well, as they may be key bridges between legal and illegal entities.
+:::
+
+::: panel-tabset
+## Sub-network graph
+
+```{r}
+#| echo: false
+# Create a visNetwork object with nodes and edges
+visNetwork(nodes = bluewater_aqua_nodes, edges = bluewater_aqua_edges) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)
+```
+
+## Code
+
+```{r}
+#| eval: true
+#| output: false
+# Create a visNetwork object with nodes and edges
+visNetwork(nodes = bluewater_aqua_nodes, edges = bluewater_aqua_edges) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)
+```
+
+## Company Info
+
+```{r}
+#| echo: false
+# Creating a vector of the desired rows to extract
+desired_rows <- c("Aqua Aura SE Marine life", "BlueWater Bistro GmbH Industrial")
+
+# Extracting the desired rows and columns
+extracted_data <- nodes_fishing %>%
+  filter(id %in% desired_rows) %>%
+  select(ID = id, Country = country, `Total Revenue` = revenue_calculated)
+
+# Printing the extracted data as a table using kable
+kable(extracted_data, format = "html", caption = "Company Information")
+```
+
+## Code
+
+```{r}
+#| eval: true
+#| output: false
+# Creating a vector of the desired rows to extract
+desired_rows <- c("Aqua Aura SE Marine life", "BlueWater Bistro GmbH Industrial")
+
+# Extracting the desired rows and columns
+extracted_data <- nodes_fishing %>%
+  filter(id %in% desired_rows) %>%
+  select(ID = id, Country = country, `Total Revenue` = revenue_calculated)
+
+# Printing the extracted data as a table using kable
+kable(extracted_data, format = "html", caption = "Company Information")
+```
+:::
+
+### 5.3 Individuals associated with multiple companies 
+
+Earlier when we were discussing the nature of the relationships provided in the edges file, one of the key ideas was to look at influencial individuals in the system. These individuals may be like James Martinez, playing a bridging role between and large and small firm. But let's look at it from a different perpective. Let's identify the individual who is associated with the most firms. 
+
+The code chunk below will help us identify this individual:
+
+```{r}
+#| code-fold: true
+# Finding the most repeated value in the 'target' column
+most_repeated_value <- names(which.max(table(edges_fishing$target)))
+
+# Printing the most repeated value
+print(most_repeated_value)
+```
+
+We then extract the network that James Brown is associated with using the code chunk below:
+
+```{r}
+#| code-fold: true
+# Identify values in the 'from' column that have 'James Brown' in the source column
+James_from <- unique(edges_fishing_i$from[edges_fishing_i$to == 'James Brown'])
+
+# Extract all rows from edges_fishing where the 'source' value appears in the 'James_from' list
+James_edges <- subset(edges_fishing_i, from %in% James_from)
+
+# Extract all rows from nodes_fishing that appear in the 'from' or 'to' column in 'James_edges'
+James_nodes <- subset(nodes_fishing, id %in% c(James_edges$from, James_edges$to))
+
+```
+
+While the number of nodes in this sub-network is smaller than the one involving Bluewater and Aqua Aura (47 versus 26), see that James is actually associated with 3 companies, of which, one is solely owned by him. Taking a closer look at the company information, we also see that all 3 companies are associated with different countries. 
+
+::: {.callout-note appearance="simple"}
+## Insight
+
+This trend has some similarly with the one above, where one individual serves as a bridge between large and small firms. What is slightly more suspicious in the case of James Brown is that one of the company is owned soly by him. 
+
+It may therefore be useful for FishEye to look into such associations. 
+:::
+
+::: panel-tabset
+## Sub-network graph
+
+```{r}
+#| echo: false
+# Create a visNetwork object with nodes and edges
+visNetwork(nodes = James_nodes, edges = James_edges) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)
+```
+
+## Code
+
+```{r}
+#| eval: true
+#| output: false
+# Create a visNetwork object with nodes and edges
+visNetwork(nodes = James_nodes, edges = James_edges) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)
+```
+
+## Company Info
+
+```{r}
+#| echo: false
+# Creating a vector of the desired rows to extract
+desired_rows <- c("Icelandic Cat Herring Sp Enterprises", "Náutica del Norte LC", "Tran LLC")
+
+# Extracting the desired rows and columns
+extracted_data <- nodes_fishing %>%
+  filter(id %in% desired_rows) %>%
+  select(ID = id, Country = country, `Total Revenue` = revenue_calculated, `Product and Services` = product_services)
+
+# Printing the extracted data as a table using kable
+kable(extracted_data, format = "html", caption = "Company Information")
+```
+
+## Code
+
+```{r}
+#| eval: true
+#| output: false
+# Creating a vector of the desired rows to extract
+desired_rows <- c("Icelandic Cat Herring Sp Enterprises", "Náutica del Norte LC", "Tran LLC")
+
+# Extracting the desired rows and columns
+extracted_data <- nodes_fishing %>%
+  filter(id %in% desired_rows) %>%
+  select(ID = id, Country = country, `Total Revenue` = revenue_calculated, `Product and Services` = product_services)
+
+# Printing the extracted data as a table using kable
+kable(extracted_data, format = "html", caption = "Company Information")
+```
+:::
+
+## 6 Conclusion
+
+Based on these preliminary exploration of the data, a few anomalies were obsered: 
+
+- When looking at revenue of companies vis-a-vis their network size, a handful of companies with few beneficial owners were spotted. If the number of beneficial owners is a correlated to the size of firm, then it would be useful for FishEye to understand why these firms, with its lean operations, can generate such high revenue. 
+
+- The second interesting association was the observation of individuals who own multiple companies. Based on the two sub-network graphs explored, the companies tended to be a mix of large and small firms from different countries as well. While everything may indeed be above board, there is value for FishEye to also take a closer look at these individuals owning companies across boarders. Especially, it the smaller entities are owned solely by them, as illustrated in the case of 'James Brown'. 
