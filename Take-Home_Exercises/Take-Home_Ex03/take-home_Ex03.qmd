@@ -56,7 +56,7 @@ Similar to mini-challenge 2, the data files provided for the challenge are in js
 mc3 <- fromJSON("/Users/jiahuiloh/lohjiahui/ISSS608-VAA/Take-Home_Exercises/Take-Home_Ex03/data/MC3.json")
 ```
 
-Using the `glimpse()` function, we observe that the data is not in the usual dataframe format, but in a list format instead. The final output if hidden due to output length. Using the image below however, we can see that list format. Keeping this format would make subsequent data wrangling tasks challenging. As such, we will need to transform the data format.
+Using the `glimpse()` function, we observe that the data is not in the usual dataframe format, but in a list format instead. The final output is hidden due to output length. Using the screenshot image below however, we can see that list format. Keeping this format would make subsequent data wrangling tasks challenging. As such, we will need to transform the data format.
 
 ```{r}
 #| eval: false
@@ -308,7 +308,7 @@ print(nodes_match)
 
 Post alignment, after a quick review of the nodes dataframe, it is also observed that the node identifiers are not unique. These nodes however, are not duplicates, as they may be companies with the same name from different origin countries, or belonging to a different produce or services group. We'll need to clean this up for subsequent network analyses.
 
-The code chunk below will group the rows by unique 'id'. Specifically, for the variable type, each additional value will be recorded in a new column e.g. "type_2". For the remaining variables, values will concatenated within the original columns, and seperated by a comma. Odd values like character(0), and Unknown will also be changed to 'NA'.
+The code chunk below will group the rows by unique 'id'. Specifically, for the variable type, each additional value will be recorded in a new column e.g. "type_2". For the remaining variables, values will concatenated within the original columns, and separated by a comma. Odd values like character(0), and Unknown will also be changed to 'NA'.
 
 ```{r}
 #| code-fold: true
@@ -402,14 +402,21 @@ The code chunk below helps us filter out categories based on what we have assess
 #| code-fold: true
 #| 
 # List of words to filter by
-words_to_include <- c("fish", "seafood", "fresh", "shrimp", "prawn", "salmon", "tuna", "shellfish", "crabs", "squid", "mollusks", "crustaceans", "lobster", "oysters", "clams", "bass", "trout", "tuna", "cod", "shark", "chum", "sea", "ocean", "aquatic", "shipping", "shipments", "shipments", "pier")
+words_to_include <- c("fish", "fishing", "finfish", "seafood", "seafoods", "fresh", "shrimp", "prawn", "salmon", "tuna", "shellfish", "crabs", "squid", "mollusks", "crustaceans", "lobster", "oysters", "clams", "bass", "trout", "tuna", "cod", "shark", "chum", "sea", "ocean")
 
 nodes_grouped$product_services <- tolower(nodes_grouped$product_services)
 
 nodes_grouped <- nodes_grouped %>%
+  mutate(product_services_new = ifelse(!is.na(product_services), paste0(gsub("\\bna\\b", "", product_services, ignore.case = TRUE), " "), product_services))
+
+nodes_grouped <- nodes_grouped %>%
+  mutate(product_services_new = ifelse(product_services_new == "", NA, product_services_new))
+
+
+nodes_grouped <- nodes_grouped %>%
   mutate(category = case_when(
-    !is.na(product_services) & grepl(paste("\\b", words_to_include, "\\b", collapse = "|"), tolower(product_services)) ~ "Fishing Activities",
-    !is.na(product_services) ~ "Non-Fishing Activities",
+    !is.na(product_services_new) & grepl(paste("\\b", words_to_include, "\\b", collapse = "|"), tolower(product_services_new)) ~ "Fishing Activities",
+    !is.na(product_services_new) ~ "Non-Fishing Activities",
     TRUE ~ NA_character_
   ))
 
@@ -419,8 +426,8 @@ nodes_grouped <- nodes_grouped %>%
 ## Things to learn from the code chunk above
 
 -   The `tolower()` function is used to convert all words in the product_services column to lower case
--   The `grepl()` function is used to check if the 'product_services' column contains any of the words in the 'words_to_include' list, ignoring case sensitivity.
--   Next the `paste(words_to_include, collapse = "|")` portion of the code is used to create a regular expression pattern that matches any of the words in the list.
+-   The `gsub()` function is used to check if the 'product_services' column contains any of the words in the 'words_to_include' list, ignoring case sensitivity.
+-   Next the `paste("\\b", words_to_include, "\\b", collapse = "|")` portion of the code is used to create a regular expression pattern that matches any of the words in the list.
 
 If a match is found, the row will be categorized as "Fishing Activities". If 'product_services' is not NA but doesn't match any words in the list, it will be categorized as "Non-Fishing Activities".
 :::
@@ -486,7 +493,7 @@ ggplot(type_props, aes(x = "", y = prop, fill = type_1)) +
 
 #### 3.3.1 Industry type
 
-Zooming only into nodes that were companies, we see that 410 were associated with the fishing industry, while the rest were either unlikely to be associated, or unknown.
+Zooming only into nodes that were companies, we see that 463 were associated with the fishing industry, while the rest were either unlikely to be associated, or unknown.
 
 ::: panel-tabset
 ## Plot
@@ -679,8 +686,9 @@ visNetwork(nodes = nodes_fishing, edges = edges_fishing_i) %>%
 ```{r}
 #| eval: true
 #| output: false
+# Rename the group column to match the mapping
 nodes_fishing <- nodes_fishing %>%
-  rename(group = group) 
+  rename(group = group)
 
 # Create a visNetwork object with nodes and edges
 visNetwork(nodes = nodes_fishing, edges = edges_fishing_i) %>%
@@ -692,15 +700,15 @@ visNetwork(nodes = nodes_fishing, edges = edges_fishing_i) %>%
 ```
 :::
 
-### 5.1 Reviewing Networks by Diameter
+### 5.2 Reviewing Networks 
 
-#### 5.1.1 Count and Size distribution
+#### 5.2.1 Size - Number of nodes and diameter
 
 Network diameter refers to the shortest distance between the two modes distant nodes in network.
 
-Using the `components()` function in igraph, we see that 391 sub-graphs make up the whole network. The number of nodes in each sub-graph were also counted. Both set of values were added as new variables in the 'nodes_fishing' dataframe.
+Using the `components()` function in igraph, we see that 440 sub-graphs make up the whole network. The number of nodes in each sub-graph were also counted. Both set of values were added as new variables in the 'nodes_fishing' dataframe.
 
-Looking at the 2 histograms below, we see that majority of the nodes being to fairly small sub-networks (2 nodes were the mode), and of diameter less than 4.
+Looking at the 2 histograms below, we see that majority of the nodes being to fairly small sub-networks; 2 nodes was the mode, and of diameter of 4 or less.
 
 ```{r}
 #| code-fold: true
@@ -768,8 +776,8 @@ nodes_fishing$num_nodes <- node_counts[node_membership]
 
 # Create a histogram using 'ggplot2'
 histogram <- ggplot(nodes_fishing, aes(x = num_nodes)) +
-  geom_histogram(binwidth = 1, fill = "steelblue", color = "black") +
-  labs(x = "Number of Nodes", y = "Count", title = "Distribution of Number of Nodes within sub-graph") +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  labs(x = "Number of Nodes", y = "Count", title = "Distribution of Sub-Networks by Number of Nodes") +
   theme_classic()
 
 # Convert the histogram to a plotly object with tooltips
@@ -835,7 +843,7 @@ plotly_histogram
 ```
 :::
 
-### 5.1.2 Revenue
+#### 5.2.2 Revenue
 
 Since a large majority of the sub-graphs belong to very small networks, it may not be efficient to study their patterns in the form of a network graph. As such, we will use other visualisation tools to understand the characteristics.
 
@@ -943,7 +951,7 @@ plotly_scatterplot
 ::: {.callout-note appearance="simple"}
 ## Insight
 
-While we cannot assume illegal activities, it may be wise for FishEye to take a closer look at these businesses to understand how they keep operations so lean and yet yield such high returns. Specifically, they can start with the 3 identified companies first.
+While we cannot assume illegal activities, it may be wise for FishEye to take a closer look at these businesses to understand how they keep operations so lean and yet yield such high returns. Specifically, they can start with the 2 identified companies first.
 
 A good way to start may be to review the company information, to see if anything stands out. For example, after reviewing the company information for Morgan Group, we see the the high revenue is actually tied to the beneficial owner, and not the company itself.
 :::
@@ -963,11 +971,12 @@ extracted_data_congo <- nodes_fishing %>%
 kable(extracted_data_congo, format = "html", caption = "Company Information")
 ```
 
-### 5.2 Inspecting larget sub-networks
+### 5.3 Inspecting large sub-networks
 
-Aside from looking at small companies with large earnings, we will also look at the flip side i.e., exceptionally large networks, to take a closer look at their operations. From the scatterplot above, the companies with the top 3 highest number of nodes in their networks were:
+Aside from looking at small companies with large earnings, we will also look at the flip side i.e., exceptionally large networks, to take a closer look at their operations. From the scatterplot above, the companies with the top 4 highest number of nodes in their networks were (the last 2 firms were grouped together):
 
 -   Congo Rapids Ltd Corperation
+-   Nagaland Sea Catch Ltd. Liability Co Logistics
 -   BlueWater Bistro GmbH Industrial
 -   Aqua Aura SE Marine Life
 
@@ -995,6 +1004,17 @@ congo_edges <- subset(edges_fishing_i, to %in% Congo_to)
 # Extract all rows from nodes_fishing that appear in the 'from' or 'to' column in 'congo_edges'
 congo_nodes <- subset(nodes_fishing, id %in% c(congo_edges$from, congo_edges$to))
 
+### Nagaland Sea Catch Ltd. Liability Co Logistics
+
+# Identify values in the 'to' column that have 'Nagaland Sea Catch Ltd. Liability Co Logistics' in the source column
+naga_to <- unique(edges_fishing_i$to[edges_fishing_i$from == 'Nagaland Sea Catch Ltd. Liability Co Logistics'])
+
+# Extract all rows from edges_fishing where the names appear in the 'naga_to' list
+naga_edges <- subset(edges_fishing_i, to %in% naga_to)
+
+# Extract all rows from nodes_fishing that appear in the 'from' or 'to' column in 'naga_edges'
+naga_nodes <- subset(nodes_fishing, id %in% c(naga_edges$from, naga_edges$to))
+
 ### BlueWater Bistro GmbH Industrial
 
 # Identify values in the 'to' column that have 'BlueWater Bistro GmbH Industrial' or 'Aqua Aura SE Marine life' in the source column
@@ -1009,7 +1029,7 @@ bluewater_aqua_nodes <- subset(nodes_fishing, id %in% c(bluewater_aqua_edges$fro
 
 ```
 
-#### 5.2.1 Congo Rapids Ltd Corperation - Ego Network
+#### 5.3.1 Congo Rapids Ltd Corperation - Ego Network
 
 Looking at the interactive chart below, we see a simple ego-network. In essence, the reason behind Congo's larger than usual network size, in terms of number of nodes, is due to it having many beneficial owners. A closer look at the nodes data, we will also see that Congo Rapids Ltd Corperation actually has 2 lines of business, one fishing-related, and the other one not. As such, it is reasonable for the firm to have many owners. As such, nothing appears fishy, on this front.
 
@@ -1025,16 +1045,86 @@ visNetwork(nodes = congo_nodes, edges = congo_edges) %>%
 
 ```
 
-#### 5.2.1 BlueWater Bistro GmbH Industrial & Aqua Aura SE Marine LifeCongo Rapids Ltd Corperation - Sub-network
+#### 5.3.2 Nagaland Sea Catch Ltd. Liability Co Logistics - Sub-network
 
-Unlike the network graph for Congo Rapids Ltd Corperation, this network subgraph is slightly more interesting. Firstly, we see one individual, James Martinez, serving as a bridge between the two firms, with Aqua Aura being the larger firm between the two.
+The network graph for Nagaland however, was slightly more interesting. Specifically, we see one individual, Mary Williams playing a role as am important bridge between two companies, one with many stakeholders, and another where she is the sole owner. Looking closer at the information of both companies, we will see that they reside in different countries, and the smaller firm owned solely by Mary, did not report a revenue.
+
+::: panel-tabset
+## Sub-network graph
+
+```{r}
+#| echo: false
+
+# Create a visNetwork object with nodes and edges
+visNetwork(nodes = naga_nodes, edges = naga_edges) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)
+
+```
+
+## Code
+
+```{r}
+#| eval: true
+#| output: false
+
+# Create a visNetwork object with nodes and edges
+visNetwork(nodes = naga_nodes, edges = naga_edges) %>%
+  visIgraphLayout(layout = "layout_with_fr") %>%
+  visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE) %>%
+  visLegend() %>%
+  visLayout(randomSeed = 123)
+
+```
+
+## Company Info
+
+```{r}
+#| echo: false
+
+# Creating a vector of the desired rows to extract
+desired_rows <- c("Nagaland Sea Catch Ltd. Liability Co Logistics", "WaveWorx Abalone N.V. Family")
+
+# Extracting the desired rows and columns
+extracted_data <- nodes_fishing %>%
+  filter(id %in% desired_rows) %>%
+  select(ID = id, Country = country, `Total Revenue` = revenue_calculated)
+
+# Printing the extracted data as a table using kable
+kable(extracted_data, format = "html", caption = "Company Information")
+```
+
+## Code
+
+```{r}
+#| eval: true
+#| output: false
+
+# Creating a vector of the desired rows to extract
+desired_rows <- c("Nagaland Sea Catch Ltd. Liability Co Logistics", "WaveWorx Abalone N.V. Family")
+
+# Extracting the desired rows and columns
+extracted_data <- nodes_fishing %>%
+  filter(id %in% desired_rows) %>%
+  select(ID = id, Country = country, `Total Revenue` = revenue_calculated)
+
+# Printing the extracted data as a table using kable
+kable(extracted_data, format = "html", caption = "Company Information")
+```
+:::
+
+#### 5.3.3 BlueWater Bistro GmbH Industrial & Aqua Aura SE Marine LifeCongo Rapids Ltd Corperation - Sub-network
+
+Similar to Nagaland, this network sub-graph is slightly more interesting. Firstly, we see one individual, James Martinez, serving as a bridge between the two firms, with Aqua Aura being the larger firm between the two.
 
 In fact, if we review the company information, we see the Aqua Aura brings in about 10 times more revenue companies to Bluewater. We also see that Aqua Aura has presence in 9 countries; the 9 countries however, do no overlap with Bluewater, which is associated with Marebak.
 
 ::: {.callout-note appearance="simple"}
 ## Insight
 
-It is interesting that James Martinez, a beneficial owner from such a large firm, would also be associated with a much smaller firm, and from a totally different country. It may be useful for FishEye to look into such individuals as well, as they may be key bridges between legal and illegal entities.
+It is interesting that James Martinez, a beneficial owner from such a large firm, would also be associated with a much smaller firm, and from a totally different country. This trend is also similar to the one we see with 'Nagaland Sea Catch Ltd. Liability Co Logistics'. It may be useful for FishEye to look into such individuals as well, as they may be key bridges between legal and illegal entities.
 :::
 
 ::: panel-tabset
@@ -1097,9 +1187,9 @@ kable(extracted_data, format = "html", caption = "Company Information")
 ```
 :::
 
-### 5.3 Individuals associated with multiple companies 
+### 5.4 Individuals associated with multiple companies
 
-Earlier when we were discussing the nature of the relationships provided in the edges file, one of the key ideas was to look at influencial individuals in the system. These individuals may be like James Martinez, playing a bridging role between and large and small firm. But let's look at it from a different perpective. Let's identify the individual who is associated with the most firms. 
+Earlier when we were discussing the nature of the relationships provided in the edges file, one of the key ideas was to look at influential individuals in the system. These individuals may be like James Martinez, playing a bridging role between and large and small firm. But let's look at it from a different perspective. Let's identify the individual who is associated with the most firms.
 
 The code chunk below will help us identify this individual:
 
@@ -1127,14 +1217,14 @@ James_nodes <- subset(nodes_fishing, id %in% c(James_edges$from, James_edges$to)
 
 ```
 
-While the number of nodes in this sub-network is smaller than the one involving Bluewater and Aqua Aura (47 versus 26), see that James is actually associated with 3 companies, of which, one is solely owned by him. Taking a closer look at the company information, we also see that all 3 companies are associated with different countries. 
+While the number of nodes in this sub-network is smaller than the one involving Bluewater and Aqua Aura (47 versus 26), see that James is actually associated with 3 companies, of which, one is solely owned by him. Taking a closer look at the company information, we also see that all 3 companies are associated with different countries.
 
 ::: {.callout-note appearance="simple"}
 ## Insight
 
-This trend has some similarly with the one above, where one individual serves as a bridge between large and small firms. What is slightly more suspicious in the case of James Brown is that one of the company is owned soly by him. 
+This trend has some similarly with the one above, where one individual serves as a bridge between large and small firms. What is slightly more suspicious in the case of James Brown is that one of the company is owned soley by him.
 
-It may therefore be useful for FishEye to look into such associations. 
+It may therefore be useful for FishEye to look into such associations.
 :::
 
 ::: panel-tabset
@@ -1199,8 +1289,8 @@ kable(extracted_data, format = "html", caption = "Company Information")
 
 ## 6 Conclusion
 
-Based on these preliminary exploration of the data, a few anomalies were obsered: 
+Based on these preliminary exploration of the data, a few anomalies were obsered:
 
-- When looking at revenue of companies vis-a-vis their network size, a handful of companies with few beneficial owners were spotted. If the number of beneficial owners is a correlated to the size of firm, then it would be useful for FishEye to understand why these firms, with its lean operations, can generate such high revenue. 
+-   When looking at revenue of companies vis-a-vis their network size, a handful of companies with few beneficial owners were spotted. If we assume the number of beneficial owners is a correlated to the size of firm (i.e., the larger the firms the more beneficial owners it will have), then it would be useful for FishEye to understand why these firms, with its lean operations, can generate such high revenue.
 
-- The second interesting association was the observation of individuals who own multiple companies. Based on the two sub-network graphs explored, the companies tended to be a mix of large and small firms from different countries as well. While everything may indeed be above board, there is value for FishEye to also take a closer look at these individuals owning companies across boarders. Especially, it the smaller entities are owned solely by them, as illustrated in the case of 'James Brown'. 
+-   The second interesting association was the observation of individuals who own multiple companies. Based on the 3 sub-network graphs explored, the companies tended to be a mix of large and small firms from different countries as well. While everything may indeed be above board, there is value for FishEye to also take a closer look at these individuals owning companies across boarders. Especially, it the smaller entities are owned solely by them, as illustrated in the case of 'James Brown'.
